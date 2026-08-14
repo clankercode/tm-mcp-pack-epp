@@ -49,6 +49,6 @@
 - **Clone-local state path:** `.local-state.md` (git-excluded)
 - **Manifest and entrypoint:** `info.toml`, `src/Main.as`
 - **Static diagnostics:** recorded at first build
-- **First-load evidence:** recorded after `./build.sh dev`
+- **First-load evidence:** 2026-08-15 Openplanet.log `Loaded plugin 'tm-mcp-pack-epp'` + `TM Control MCP pack registered tm-mcp-pack-epp tools=24`. Live: Ping, ListCoverage, GetInventorySummary (5966 items), ControlEditMode get.
 - **Explicit runtime blocker, if evidence is unavailable:** —
-- **Initialization boundary:** feature tools ship in the same increment (user asked for E++ coverage, not init-only)
+- **Initialization boundary:** feature tools included in first increment per user request (E++ coverage)
