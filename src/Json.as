@@ -14,6 +14,48 @@ namespace TmMcpPackEpp {
         return r;
     }
 
+    Json::Value@ MakeSuccess(Json::Value &in output) {
+        Json::Value r = Json::Object();
+        r["success"] = true;
+        r["output"] = output;
+        return r;
+    }
+
+    Json::Value@ MakeError(const string &in err) {
+        return MakeError(err, "", false, "", "");
+    }
+
+    Json::Value@ MakeError(
+        const string &in err,
+        const string &in code,
+        bool retryable = false,
+        const string &in requiredMode = "",
+        const string &in hint = ""
+    ) {
+        Json::Value r = Json::Object();
+        r["success"] = false;
+        r["error"] = err;
+        if (code.Length > 0) r["code"] = code;
+        if (retryable) r["retryable"] = true;
+        if (requiredMode.Length > 0) r["requiredMode"] = requiredMode;
+        if (hint.Length > 0) r["hint"] = hint;
+        return r;
+    }
+
+    Json::Value@ EditorPlusPlusMissingError() {
+        return MakeError("Editor++ is not available.", "missing_dependency");
+    }
+
+    Json::Value@ NeedEditor() {
+        return Err("editor not available", "NOT_IN_EDITOR");
+    }
+
+    CGameCtnEditorFree@ GetEditor() {
+        auto app = cast<CTrackMania>(GetApp());
+        if (app is null || app.Editor is null) return null;
+        return cast<CGameCtnEditorFree>(app.Editor);
+    }
+
     Json::Value Vec3ToJson(const vec3 &in v) {
         Json::Value o = Json::Object();
         o["x"] = v.x;
@@ -30,51 +72,5 @@ namespace TmMcpPackEpp {
         float y = input.HasKey(py) ? float(input[py]) : 0.0;
         float z = input.HasKey(pz) ? float(input[pz]) : 0.0;
         return vec3(x, y, z);
-    }
-
-    Json::Value MapSummary(CGameCtnEditorFree@ editor) {
-        Json::Value o = Json::Object();
-        if (editor is null || editor.Challenge is null) {
-            o["available"] = false;
-            return o;
-        }
-        o["available"] = true;
-        o["mapName"] = string(editor.Challenge.MapName);
-        o["nbBlocks"] = int(editor.Challenge.Blocks.Length);
-        o["nbItems"] = int(editor.Challenge.AnchoredObjects.Length);
-        return o;
-    }
-
-    CGameCtnEditorFree@ GetEditor() {
-        return cast<CGameCtnEditorFree>(GetApp().Editor);
-    }
-
-    Json::Value@ NeedEditor() {
-        return Err("editor not available", "NOT_IN_EDITOR");
-    }
-
-    bool ModelNameMatches(CMwNod@ nod, const string &in lowerName) {
-        if (nod is null) return false;
-        auto id = cast<CMwNod>(nod);
-        string n = string(nod.IdName).ToLower();
-        if (n == lowerName) return true;
-        return n.IndexOf(lowerName) >= 0;
-    }
-
-    CGameCtnBlockInfo@ ResolveBlockModel(CGameEditorPluginMap@ pmt, const string &in blockName, bool &out isTerrain) {
-        isTerrain = false;
-        if (pmt is null) return null;
-        CGameCtnBlockInfo@ info = pmt.GetBlockModelFromName(blockName);
-        if (info !is null) return info;
-        string lowerName = blockName.ToLower();
-        for (uint i = 0; i < pmt.BlockModels.Length; i++) {
-            @info = pmt.BlockModels[i];
-            if (info !is null && string(info.IdName).ToLower() == lowerName) return info;
-        }
-        isTerrain = true;
-        @info = pmt.GetTerrainBlockModelFromName(blockName);
-        if (info !is null) return info;
-        isTerrain = false;
-        return null;
     }
 }

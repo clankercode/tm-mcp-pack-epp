@@ -6,182 +6,301 @@ namespace TmMcpPackEpp {
         return Ok(o);
     }
 
-    Json::Value@ PlaceBlock(Json::Value &in input) {
+    // B: batch place/delete in one call
+    Json::Value@ PlaceBlocksAndItems(Json::Value &in input) {
         auto editor = GetEditor();
-        if (editor is null || editor.PluginMapType is null || editor.Challenge is null) return NeedEditor();
-        if (!input.HasKey("blockName") || !input.HasKey("x") || !input.HasKey("y") || !input.HasKey("z")) {
-            return Err("missing blockName, x, y, z");
-        }
-        bool isTerrain = false;
-        auto blockInfo = ResolveBlockModel(editor.PluginMapType, string(input["blockName"]), isTerrain);
-        if (blockInfo is null) return Err("block not found: " + string(input["blockName"]));
-        if (isTerrain) return Err("terrain models are not supported by E++ free-block placement");
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        if (!input.HasKey("blocks") && !input.HasKey("items")) return Err("missing blocks / items arrays");
 
-        vec3 pos = JsonToVec3(input);
-        vec3 rot = vec3(
-            input.HasKey("pitch") ? float(input["pitch"]) : 0.0,
-            input.HasKey("yaw") ? float(input["yaw"]) : 0.0,
-            input.HasKey("roll") ? float(input["roll"]) : 0.0
-        );
-        bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
-        auto spec = Editor::MakeBlockSpec(blockInfo, pos, rot);
-        spec.SetFree();
-        spec.isGround = false;
-        spec.isGhost = false;
-        if (input.HasKey("variant")) spec.variant = uint(int(input["variant"]));
-        spec.EnsureValidVariant();
         Editor::BlockSpec@[] blocks;
-        blocks.InsertLast(spec);
-        uint before = editor.Challenge.Blocks.Length;
-        bool placed = false;
-        try { placed = Editor::PlaceBlocks(blocks, addUndo); } catch {
-            return Err("PlaceBlocks threw: " + getExceptionInfo(), "epp_exception");
-        }
-        if (input.HasKey("autofocus") ? bool(input["autofocus"]) : true) {
-            Editor::SetCamAnimationGoTo(Editor::DirToLookUv(vec3(0, -0.4, 1)), pos, 60.0);
-        }
-        auto o = Json::Object();
-        o["placed"] = placed;
-        o["beforeBlocks"] = int(before);
-        o["afterBlocks"] = int(editor.Challenge.Blocks.Length);
-        o["pos"] = Vec3ToJson(pos);
-        o["blockName"] = string(blockInfo.IdName);
-        o["map"] = MapSummary(editor);
-        return Ok(o);
-    }
-
-    Json::Value@ PlaceItem(Json::Value &in input) {
-        auto editor = GetEditor();
-        if (editor is null || editor.Challenge is null) return NeedEditor();
-        if (!input.HasKey("itemPath") || !input.HasKey("x") || !input.HasKey("y") || !input.HasKey("z")) {
-            return Err("missing itemPath, x, y, z");
-        }
-        auto model = Editor::GetInventoryItemModelByPath(string(input["itemPath"]));
-        if (model is null) return Err("item not found: " + string(input["itemPath"]));
-        vec3 pos = JsonToVec3(input);
-        vec3 rot = vec3(
-            input.HasKey("pitch") ? float(input["pitch"]) : 0.0,
-            input.HasKey("yaw") ? float(input["yaw"]) : 0.0,
-            input.HasKey("roll") ? float(input["roll"]) : 0.0
-        );
-        bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
-        auto spec = Editor::MakeItemSpec(model, pos, rot);
-        Editor::ItemSpec@[] items;
-        items.InsertLast(spec);
-        uint before = editor.Challenge.AnchoredObjects.Length;
-        bool placed = false;
-        try { placed = Editor::PlaceItems(items, addUndo); } catch {
-            return Err("PlaceItems threw: " + getExceptionInfo(), "epp_exception");
-        }
-        auto o = Json::Object();
-        o["placed"] = placed;
-        o["beforeItems"] = int(before);
-        o["afterItems"] = int(editor.Challenge.AnchoredObjects.Length);
-        o["pos"] = Vec3ToJson(pos);
-        o["itemPath"] = string(input["itemPath"]);
-        o["map"] = MapSummary(editor);
-        return Ok(o);
-    }
-
-    Json::Value@ DeleteRecentBlocks(Json::Value &in input) {
-        auto editor = GetEditor();
-        if (editor is null || editor.Challenge is null) return NeedEditor();
-        int count = input.HasKey("count") ? int(input["count"]) : 1;
-        if (count < 1) count = 1;
-        auto blocks = editor.Challenge.Blocks;
-        if (blocks.Length == 0) return Err("no blocks");
-        CGameCtnBlock@[] toDel;
-        uint start = blocks.Length > uint(count) ? blocks.Length - uint(count) : 0;
-        for (uint i = start; i < blocks.Length; i++) {
-            if (blocks[i] !is null) toDel.InsertLast(blocks[i]);
-        }
-        bool ok = false;
-        try { ok = Editor::DeleteBlocks(toDel, true); } catch {
-            return Err("DeleteBlocks threw: " + getExceptionInfo(), "epp_exception");
-        }
-        auto o = Json::Object();
-        o["deleted"] = ok;
-        o["requested"] = count;
-        o["map"] = MapSummary(editor);
-        return Ok(o);
-    }
-
-    Json::Value@ DeleteRecentItems(Json::Value &in input) {
-        auto editor = GetEditor();
-        if (editor is null || editor.Challenge is null) return NeedEditor();
-        int count = input.HasKey("count") ? int(input["count"]) : 1;
-        if (count < 1) count = 1;
-        auto items = editor.Challenge.AnchoredObjects;
-        if (items.Length == 0) return Err("no items");
-        CGameCtnAnchoredObject@[] toDel;
-        uint start = items.Length > uint(count) ? items.Length - uint(count) : 0;
-        for (uint i = start; i < items.Length; i++) {
-            if (items[i] !is null) toDel.InsertLast(items[i]);
-        }
-        bool ok = false;
-        try { ok = Editor::DeleteItems(toDel, true); } catch {
-            return Err("DeleteItems threw: " + getExceptionInfo(), "epp_exception");
-        }
-        auto o = Json::Object();
-        o["deleted"] = ok;
-        o["requested"] = count;
-        o["map"] = MapSummary(editor);
-        return Ok(o);
-    }
-
-    Json::Value@ FindInventory(Json::Value &in input) {
-        string query = input.HasKey("query") ? string(input["query"]).ToLower() : "";
-        int limit = input.HasKey("limit") ? int(input["limit"]) : 20;
-        if (limit < 1) limit = 1;
-        if (limit > 100) limit = 100;
-        uint nb = Editor::GetInventoryNbItems();
-        auto hits = Json::Array();
-        for (uint i = 0; i < nb && int(hits.Length) < limit; i++) {
-            string path = Editor::GetInventoryItemPath(i);
-            string name = Editor::GetInventoryItemName(i);
-            if (query.Length == 0 || path.ToLower().IndexOf(query) >= 0 || name.ToLower().IndexOf(query) >= 0) {
-                auto h = Json::Object();
-                h["index"] = int(i);
-                h["name"] = name;
-                h["path"] = path;
-                hits.Add(h);
+        if (input.HasKey("blocks") && input["blocks"].GetType() == Json::Type::Array) {
+            auto arr = input["blocks"];
+            for (uint i = 0; i < arr.Length; i++) {
+                Json::Value b = arr[i];
+                if (!b.HasKey("blockName")) return Err("blocks[" + i + "] missing blockName");
+                bool isTerrain = false;
+                auto info = ResolveBlockModel(editor.PluginMapType, string(b["blockName"]), isTerrain);
+                if (info is null) return Err("block not found: " + string(b["blockName"]));
+                vec3 pos = JsonToVec3(b);
+                vec3 rot = vec3(
+                    b.HasKey("pitch") ? float(b["pitch"]) : 0.0,
+                    b.HasKey("yaw") ? float(b["yaw"]) : 0.0,
+                    b.HasKey("roll") ? float(b["roll"]) : 0.0
+                );
+                auto spec = Editor::MakeBlockSpec(info, pos, rot);
+                if (b.HasKey("free") ? bool(b["free"]) : true) {
+                    spec.SetFree();
+                    spec.isGround = false;
+                    spec.isGhost = false;
+                }
+                if (b.HasKey("variant")) spec.variant = uint(int(b["variant"]));
+                spec.EnsureValidVariant();
+                blocks.InsertLast(spec);
             }
         }
-        auto o = Json::Object();
-        o["query"] = query;
-        o["nbItems"] = int(nb);
-        o["scanning"] = Editor::IsInventoryScanningItems();
-        o["hits"] = hits;
-        o["count"] = int(hits.Length);
-        return Ok(o);
-    }
-
-    Json::Value@ RefreshInventory(Json::Value &in input) {
-        Editor::RefreshInventoryCache();
-        auto o = Json::Object();
-        o["nbItems"] = int(Editor::GetInventoryNbItems());
-        o["scanning"] = Editor::IsInventoryScanningItems();
-        return Ok(o);
-    }
-
-    Json::Value@ GetInventorySummary(Json::Value &in input) {
-        auto o = Json::Object();
-        o["nbItems"] = int(Editor::GetInventoryNbItems());
-        o["scanning"] = Editor::IsInventoryScanningItems();
-        return Ok(o);
-    }
-
-    Json::Value@ FocusCamera(Json::Value &in input) {
-        if (!input.HasKey("x") || !input.HasKey("y") || !input.HasKey("z")) {
-            return Err("missing x, y, z");
+        Editor::ItemSpec@[] items;
+        if (input.HasKey("items") && input["items"].GetType() == Json::Type::Array) {
+            auto arr = input["items"];
+            for (uint i = 0; i < arr.Length; i++) {
+                Json::Value it = arr[i];
+                if (!it.HasKey("itemPath")) return Err("items[" + i + "] missing itemPath");
+                auto model = Editor::GetInventoryItemModelByPath(string(it["itemPath"]));
+                if (model is null) return Err("item not found: " + string(it["itemPath"]));
+                vec3 pos = JsonToVec3(it);
+                vec3 rot = vec3(
+                    it.HasKey("pitch") ? float(it["pitch"]) : 0.0,
+                    it.HasKey("yaw") ? float(it["yaw"]) : 0.0,
+                    it.HasKey("roll") ? float(it["roll"]) : 0.0
+                );
+                auto spec = Editor::MakeItemSpec(model, pos, rot);
+                items.InsertLast(spec);
+            }
         }
-        vec3 pos = JsonToVec3(input);
-        float dist = input.HasKey("distance") ? float(input["distance"]) : 60.0;
-        bool ok = Editor::SetCamAnimationGoTo(Editor::DirToLookUv(vec3(0, -0.4, 1)), pos, dist);
+
+        bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
+        bool placed = false;
+        try { placed = Editor::PlaceBlocksAndItems(blocks, items, addUndo); } catch {
+            return Err("PlaceBlocksAndItems threw: " + getExceptionInfo(), "epp_exception");
+        }
         auto o = Json::Object();
-        o["ok"] = ok;
-        o["pos"] = Vec3ToJson(pos);
-        o["distance"] = dist;
+        o["placed"] = placed;
+        o["blockCount"] = int(blocks.Length);
+        o["itemCount"] = int(items.Length);
+        return Ok(o);
+    }
+
+    Json::Value@ DeleteBlocksAndItems(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        if (!input.HasKey("blockIndexes") && !input.HasKey("itemIndexes")) return Err("missing blockIndexes / itemIndexes");
+
+        Editor::BlockSpec@[] blocks;
+        CGameCtnBlock@[] blockRefs;
+        if (input.HasKey("blockIndexes") && input["blockIndexes"].GetType() == Json::Type::Array) {
+            auto arr = input["blockIndexes"];
+            for (uint i = 0; i < arr.Length; i++) {
+                int idx = int(arr[i]);
+                if (idx < 0 || uint(idx) >= editor.Challenge.Blocks.Length) return Err("blockIndex out of range: " + idx);
+                auto b = editor.Challenge.Blocks[uint(idx)];
+                if (b is null) continue;
+                auto spec = Editor::MakeBlockSpec(b);
+                if (spec is null) continue;
+                blocks.InsertLast(spec);
+                blockRefs.InsertLast(b);
+            }
+        }
+        Editor::ItemSpec@[] items;
+        CGameCtnAnchoredObject@[] itemRefs;
+        if (input.HasKey("itemIndexes") && input["itemIndexes"].GetType() == Json::Type::Array) {
+            auto arr = input["itemIndexes"];
+            for (uint i = 0; i < arr.Length; i++) {
+                int idx = int(arr[i]);
+                if (idx < 0 || uint(idx) >= editor.Challenge.AnchoredObjects.Length) return Err("itemIndex out of range: " + idx);
+                auto it = editor.Challenge.AnchoredObjects[uint(idx)];
+                if (it is null) continue;
+                auto spec = Editor::MakeItemSpec(it);
+                if (spec is null) continue;
+                items.InsertLast(spec);
+                itemRefs.InsertLast(it);
+            }
+        }
+
+        // Note: spec-based delete handles freeblocks correctly
+        bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
+        bool deleted = false;
+        try { deleted = Editor::DeleteBlocksAndItems(blocks, items, addUndo); } catch {
+            return Err("DeleteBlocksAndItems threw: " + getExceptionInfo(), "epp_exception");
+        }
+        auto o = Json::Object();
+        o["deleted"] = deleted;
+        o["blockCount"] = int(blocks.Length);
+        o["itemCount"] = int(items.Length);
+        return Ok(o);
+    }
+
+    Json::Value@ ConvertBlockToFree(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        if (!input.HasKey("index")) return Err("missing index");
+        int idx = int(input["index"]);
+        if (idx < 0 || uint(idx) >= editor.Challenge.Blocks.Length) return Err("index out of range");
+        auto block = editor.Challenge.Blocks[uint(idx)];
+        CGameCtnBlock@ repl = null;
+        try { @repl = Editor::ConvertBlockToFree(block); } catch {
+            return Err("ConvertBlockToFree threw: " + getExceptionInfo(), "epp_exception");
+        }
+        auto o = Json::Object();
+        o["converted"] = repl !is null;
+        if (repl !is null) o["pos"] = Vec3ToJson(Editor::GetBlockLocation(repl, true));
+        return Ok(o);
+    }
+
+    Json::Value@ GetMapAsMacroblock(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        Editor::MacroblockWithSetSkins@ mbs = null;
+        try { @mbs = Editor::GetMapAsMacroblock(); } catch {
+            return Err("GetMapAsMacroblock threw: " + getExceptionInfo(), "epp_exception");
+        }
+        if (mbs is null || mbs.macroblock is null) return Err("GetMapAsMacroblock returned null", "NULL_RESULT");
+        auto o = Json::Object();
+        o["nbBlocks"] = int(mbs.macroblock.blocks.Length);
+        o["nbItems"] = int(mbs.macroblock.items.Length);
+        o["nbSkins"] = int(mbs.setSkins.Length);
+        return Ok(o);
+    }
+
+    Json::Value@ SetMapEmbeddedColors(Json::Value &in input) {
+        string action = input.HasKey("action") ? string(input["action"]) : "get";
+        if (action == "set") {
+            if (!input.HasKey("raw")) return Err("missing raw (encoded colors string)");
+            Editor::Set_Map_EmbeddedCustomColorsEncoded(string(input["raw"]));
+        }
+        auto o = Json::Object();
+        o["raw"] = Editor::Get_Map_EmbeddedCustomColorsEncoded();
+        o["hasColors"] = string(Editor::Get_Map_EmbeddedCustomColorsEncoded()).Length > 0;
+        return Ok(o);
+    }
+
+    Json::Value@ ControlItemSkins(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        if (!input.HasKey("index")) return Err("missing index");
+        int idx = int(input["index"]);
+        if (idx < 0 || uint(idx) >= editor.Challenge.AnchoredObjects.Length) return Err("index out of range");
+        auto item = editor.Challenge.AnchoredObjects[uint(idx)];
+        string action = input.HasKey("action") ? string(input["action"]) : "get";
+        auto o = Json::Object();
+        o["index"] = idx;
+        if (action == "set") {
+            CSystemPackDesc@ fg = input.HasKey("fgSkin") && string(input["fgSkin"]).Length > 0
+                ? Editor::GetPackDesc(string(input["fgSkin"])) : null;
+            CSystemPackDesc@ bg = input.HasKey("bgSkin") && string(input["bgSkin"]).Length > 0
+                ? Editor::GetPackDesc(string(input["bgSkin"])) : null;
+            try { Editor::SetItemSkinsRaw(item, bg, fg); } catch {
+                return Err("SetItemSkinsRaw threw: " + getExceptionInfo(), "epp_exception");
+            }
+        }
+        auto fgNow = Editor::GetItemFGSkin(item);
+        auto bgNow = Editor::GetItemBGSkin(item);
+        o["fgSkin"] = fgNow !is null ? string(fgNow.IdName) : "";
+        o["bgSkin"] = bgNow !is null ? string(bgNow.IdName) : "";
+        return Ok(o);
+    }
+
+    Json::Value@ ControlPlacementMode(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null) return NeedEditor();
+        string action = input.HasKey("action") ? string(input["action"]) : "get";
+        if (action == "set" && input.HasKey("mode")) {
+            Editor::SetItemPlacementModeInt(int(input["mode"]));
+        }
+        auto o = Json::Object();
+        int mode = Editor::GetItemPlacementModeInt();
+        o["mode"] = mode;
+        o["modeName"] = mode == 0 ? "None" : mode == 1 ? "Normal" : mode == 2 ? "FreeGround" : mode == 3 ? "Free" : "Mode(" + mode + ")";
+        return Ok(o);
+    }
+
+    Json::Value@ ControlPivot(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null) return NeedEditor();
+        string action = input.HasKey("action") ? string(input["action"]) : "get";
+        if (action == "set" && input.HasKey("pivot")) {
+            Editor::SetCurrentPivot(editor, uint(int(input["pivot"])));
+        }
+        auto o = Json::Object();
+        o["pivot"] = int(Editor::GetCurrentPivot(editor));
+        return Ok(o);
+    }
+
+    Json::Value@ DuplicateItem(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        if (!input.HasKey("index")) return Err("missing index");
+        int idx = int(input["index"]);
+        if (idx < 0 || uint(idx) >= editor.Challenge.AnchoredObjects.Length) return Err("index out of range");
+        auto item = editor.Challenge.AnchoredObjects[uint(idx)];
+        bool update = input.HasKey("updateItems") ? bool(input["updateItems"]) : false;
+        CGameCtnAnchoredObject@ dup = null;
+        try { @dup = Editor::DuplicateAndAddItem(editor, item, update); } catch {
+            return Err("DuplicateAndAddItem threw: " + getExceptionInfo(), "epp_exception");
+        }
+        auto o = Json::Object();
+        o["duplicated"] = dup !is null;
+        o["afterItems"] = int(editor.Challenge.AnchoredObjects.Length);
+        if (dup !is null) o["pos"] = Vec3ToJson(dup.AbsolutePositionInMap);
+        return Ok(o);
+    }
+
+    Json::Value@ ListCoverage(Json::Value &in input) {
+        auto o = Json::Object();
+        auto tools = Json::Array();
+        string[] names = {
+            "Ping",
+            "PlaceBlock",
+            "PlaceItem",
+            "DeleteRecentBlocks",
+            "DeleteRecentItems",
+            "PlaceBlocksAndItems",
+            "DeleteBlocksAndItems",
+            "ConvertBlockToFree",
+            "GetMapAsMacroblock",
+            "SetMapEmbeddedColors",
+            "ControlItemSkins",
+            "ControlPlacementMode",
+            "ControlPivot",
+            "DuplicateItem",
+            "FindInventory",
+            "RefreshInventory",
+            "GetInventorySummary",
+            "ControlInventory",
+            "FocusCamera",
+            "SetCamGoTo",
+            "ControlMapObjectives",
+            "ControlEditMode",
+            "GetEditorSelectionState",
+            "SelectBlock",
+            "SelectItem",
+            "SetAirMode",
+            "ControlItemEditor",
+            "GetBlockLocation",
+            "CoordConvert",
+            "GetNodPointer",
+            "RefreshMapCache",
+            "IsGizmoActive",
+            "RunGizmoApplyBlock",
+            "SelectBlockModel",
+            "SetCursorBlock",
+            "SelectItemModel",
+            "SelectMacroblockModel",
+            "CreateNamedMacroblock",
+            "ListNamedMacroblocks",
+            "GetNamedMacroblock",
+            "ClearNamedMacroblock",
+            "AddBlockToNamedMacroblock",
+            "AddBlocksToNamedMacroblock",
+            "AddItemToNamedMacroblock",
+            "AddItemsToNamedMacroblock",
+            "PlaceNamedMacroblock",
+            "PreflightNamedMacroblockPlacement",
+            "SaveNamedMacroblock",
+            "LoadNamedMacroblock",
+            "ListSavedNamedMacroblocks",
+            "RemoveBlocksByIndex",
+            "RemoveItemsByIndex",
+            "InspectMacroblockModel",
+            "ListMacroblockInstances",
+            "SetAgentTag",
+            "ListTagged",
+            "RemoveByTag",
+            "ClearTagIndex",
+            "AssertPlacement",
+            "ListCoverage"
+        };
+        for (uint i = 0; i < names.Length; i++) tools.Add(names[i]);
+        o["tools"] = tools;
+        o["count"] = int(names.Length);
         return Ok(o);
     }
 
@@ -222,75 +341,6 @@ namespace TmMcpPackEpp {
         return Ok(o);
     }
 
-    Json::Value@ ControlEditMode(Json::Value &in input) {
-        auto editor = GetEditor();
-        if (editor is null) return NeedEditor();
-        string action = input.HasKey("action") ? string(input["action"]) : "get";
-        if (action == "set") {
-            if (input.HasKey("editMode")) {
-                string s = string(input["editMode"]).ToLower();
-                CGameEditorPluginMap::EditMode em = CGameEditorPluginMap::EditMode::Place;
-                if (s == "freelook" || s == "free") em = CGameEditorPluginMap::EditMode::FreeLook;
-                else if (s == "erase") em = CGameEditorPluginMap::EditMode::Erase;
-                else if (s == "pick") em = CGameEditorPluginMap::EditMode::Pick;
-                Editor::SetEditMode(editor, em);
-            }
-            if (input.HasKey("placeMode")) {
-                string s = string(input["placeMode"]).ToLower();
-                CGameEditorPluginMap::EPlaceMode pm = CGameEditorPluginMap::EPlaceMode::Block;
-                if (s == "freeblock") pm = CGameEditorPluginMap::EPlaceMode::FreeBlock;
-                else if (s == "item") pm = CGameEditorPluginMap::EPlaceMode::Item;
-                else if (s == "macroblock") pm = CGameEditorPluginMap::EPlaceMode::Macroblock;
-                else if (s == "ghostblock" || s == "ghost") pm = CGameEditorPluginMap::EPlaceMode::GhostBlock;
-                else if (s == "freemacroblock") pm = CGameEditorPluginMap::EPlaceMode::FreeMacroblock;
-                Editor::SetPlacementMode(editor, pm);
-            }
-        }
-        auto o = Json::Object();
-        o["editMode"] = int(Editor::GetEditMode(editor));
-        o["placeMode"] = int(Editor::GetPlacementMode(editor));
-        o["isBlockPlacement"] = Editor::IsInBlockPlacementMode(editor, false);
-        o["isFreeBlockPlacement"] = Editor::IsInFreeBlockPlacementMode(editor, false);
-        o["isAnyItemPlacement"] = Editor::IsInAnyItemPlacementMode(editor, false);
-        o["isMacroblockPlacement"] = Editor::IsInMacroblockPlacementMode(editor, false);
-        o["isGizmoActive"] = Editor::IsGizmoActive();
-        return Ok(o);
-    }
-
-    Json::Value@ GetEditorSelectionState(Json::Value &in input) {
-        auto editor = GetEditor();
-        if (editor is null) return NeedEditor();
-        auto o = Json::Object();
-        o["isGizmoActive"] = Editor::IsGizmoActive();
-        if (editor.CurrentBlockInfo !is null) {
-            o["currentBlock"] = string(editor.CurrentBlockInfo.IdName);
-        }
-        if (editor.CurrentItemModel !is null) {
-            o["currentItem"] = string(editor.CurrentItemModel.IdName);
-        }
-        if (editor.CurrentMacroBlockInfo !is null) {
-            o["currentMacroblock"] = string(editor.CurrentMacroBlockInfo.IdName);
-        }
-        auto picked = Editor::GetPickedBlock();
-        if (picked !is null && picked.BlockInfo !is null) {
-            o["pickedBlock"] = string(picked.BlockInfo.IdName);
-        }
-        return Ok(o);
-    }
-
-    Json::Value@ SelectBlock(Json::Value &in input) {
-        auto editor = GetEditor();
-        if (editor is null || editor.PluginMapType is null) return NeedEditor();
-        if (!input.HasKey("blockName")) return Err("missing blockName");
-        bool isTerrain = false;
-        auto info = ResolveBlockModel(editor.PluginMapType, string(input["blockName"]), isTerrain);
-        if (info is null) return Err("block not found");
-        Editor::SetSelectedBlockInfo(editor, info);
-        auto o = Json::Object();
-        o["blockName"] = string(info.IdName);
-        return Ok(o);
-    }
-
     Json::Value@ SelectItem(Json::Value &in input) {
         auto editor = GetEditor();
         if (editor is null) return NeedEditor();
@@ -302,7 +352,6 @@ namespace TmMcpPackEpp {
         auto o = Json::Object();
         o["item"] = string(model.IdName);
         o["method"] = "placeModeOnly";
-        o["hint"] = "CurrentItemModel is read-only; use PlaceItem to place by path.";
         return Ok(o);
     }
 
@@ -369,12 +418,11 @@ namespace TmMcpPackEpp {
         vec3 v = JsonToVec3(input);
         auto o = Json::Object();
         if (action == "posToCoord") {
-            nat3 c = Editor::PosToCoord(v);
-            o["x"] = int(c.x);
-            o["y"] = int(c.y);
-            o["z"] = int(c.z);
+            o["x"] = int(Math::Floor(v.x / 32.0));
+            o["y"] = int(Math::Floor((v.y + 64.0) / 8.0));
+            o["z"] = int(Math::Floor(v.z / 32.0));
         } else {
-            o["pos"] = Vec3ToJson(Editor::CoordToPos(nat3(uint(v.x), uint(v.y), uint(v.z))));
+            o["pos"] = Vec3ToJson(vec3(v.x * 32.0, v.y * 8.0 - 64.0, v.z * 32.0));
         }
         return Ok(o);
     }
@@ -422,21 +470,139 @@ namespace TmMcpPackEpp {
         return Ok(o);
     }
 
-    Json::Value@ ListCoverage(Json::Value &in input) {
+
+    Json::Value@ PlaceBlock(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.PluginMapType is null || editor.Challenge is null) return NeedEditor();
+        if (!input.HasKey("blockName") || !input.HasKey("x") || !input.HasKey("y") || !input.HasKey("z")) {
+            return Err("missing blockName, x, y, z");
+        }
+        bool isTerrain = false;
+        auto blockInfo = ResolveBlockModel(editor.PluginMapType, string(input["blockName"]), isTerrain);
+        if (blockInfo is null) return Err("block not found: " + string(input["blockName"]));
+        if (isTerrain) return Err("terrain models are not supported by E++ free-block placement");
+
+        vec3 pos = JsonToVec3(input);
+        vec3 rot = vec3(
+            input.HasKey("pitch") ? float(input["pitch"]) : 0.0,
+            input.HasKey("yaw") ? float(input["yaw"]) : 0.0,
+            input.HasKey("roll") ? float(input["roll"]) : 0.0
+        );
+        bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
+        auto spec = Editor::MakeBlockSpec(blockInfo, pos, rot);
+        spec.SetFree();
+        spec.isGround = false;
+        spec.isGhost = false;
+        if (input.HasKey("variant")) spec.variant = uint(int(input["variant"]));
+        spec.EnsureValidVariant();
+        Editor::BlockSpec@[] blocks;
+        blocks.InsertLast(spec);
+        uint before = editor.Challenge.Blocks.Length;
+        bool placed = false;
+        try { placed = Editor::PlaceBlocks(blocks, addUndo); } catch {
+            return Err("PlaceBlocks threw: " + getExceptionInfo(), "epp_exception");
+        }
+        if (input.HasKey("autofocus") ? bool(input["autofocus"]) : true) {
+            AutofocusCameraOn(pos, 60.0);
+        }
         auto o = Json::Object();
-        auto tools = Json::Array();
-        string[] names = {
-            "Ping", "PlaceBlock", "PlaceItem", "DeleteRecentBlocks", "DeleteRecentItems",
-            "FindInventory", "RefreshInventory", "GetInventorySummary",
-            "FocusCamera", "SetCamGoTo", "ControlMapObjectives", "ControlEditMode",
-            "GetEditorSelectionState", "SelectBlock", "SelectItem", "SetAirMode",
-            "ControlItemEditor", "GetBlockLocation", "CoordConvert", "GetNodPointer",
-            "RefreshMapCache", "IsGizmoActive", "RunGizmoApplyBlock", "ListCoverage"
-        };
-        for (uint i = 0; i < names.Length; i++) tools.Add(names[i]);
-        o["tools"] = tools;
-        o["count"] = int(names.Length);
-        o["note"] = "Named-macroblock JSON store and RemoveByTag stay in tm-control-mcp for now.";
+        o["placed"] = placed;
+        o["beforeBlocks"] = int(before);
+        o["afterBlocks"] = int(editor.Challenge.Blocks.Length);
+        o["pos"] = Vec3ToJson(pos);
+        o["blockName"] = string(blockInfo.IdName);
+        return Ok(o);
+    }
+
+    Json::Value@ PlaceItem(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        if (!input.HasKey("itemPath") || !input.HasKey("x") || !input.HasKey("y") || !input.HasKey("z")) {
+            return Err("missing itemPath, x, y, z");
+        }
+        auto model = Editor::GetInventoryItemModelByPath(string(input["itemPath"]));
+        if (model is null) return Err("item not found: " + string(input["itemPath"]));
+        vec3 pos = JsonToVec3(input);
+        vec3 rot = vec3(
+            input.HasKey("pitch") ? float(input["pitch"]) : 0.0,
+            input.HasKey("yaw") ? float(input["yaw"]) : 0.0,
+            input.HasKey("roll") ? float(input["roll"]) : 0.0
+        );
+        bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
+        auto spec = Editor::MakeItemSpec(model, pos, rot);
+        Editor::ItemSpec@[] items;
+        items.InsertLast(spec);
+        uint before = editor.Challenge.AnchoredObjects.Length;
+        bool placed = false;
+        try { placed = Editor::PlaceItems(items, addUndo); } catch {
+            return Err("PlaceItems threw: " + getExceptionInfo(), "epp_exception");
+        }
+        if (input.HasKey("autofocus") ? bool(input["autofocus"]) : true) {
+            AutofocusCameraOn(pos, 60.0);
+        }
+        auto o = Json::Object();
+        o["placed"] = placed;
+        o["beforeItems"] = int(before);
+        o["afterItems"] = int(editor.Challenge.AnchoredObjects.Length);
+        o["pos"] = Vec3ToJson(pos);
+        o["itemPath"] = string(input["itemPath"]);
+        return Ok(o);
+    }
+
+    Json::Value@ DeleteRecentBlocks(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        int count = input.HasKey("count") ? int(input["count"]) : 1;
+        if (count < 1) count = 1;
+        auto blocks = editor.Challenge.Blocks;
+        if (blocks.Length == 0) return Err("no blocks");
+        CGameCtnBlock@[] toDel;
+        uint start = blocks.Length > uint(count) ? blocks.Length - uint(count) : 0;
+        for (uint i = start; i < blocks.Length; i++) {
+            if (blocks[i] !is null) toDel.InsertLast(blocks[i]);
+        }
+        bool ok = false;
+        try { ok = Editor::DeleteBlocks(toDel, true); } catch {
+            return Err("DeleteBlocks threw: " + getExceptionInfo(), "epp_exception");
+        }
+        auto o = Json::Object();
+        o["deleted"] = ok;
+        o["requested"] = count;
+        return Ok(o);
+    }
+
+    Json::Value@ DeleteRecentItems(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Challenge is null) return NeedEditor();
+        int count = input.HasKey("count") ? int(input["count"]) : 1;
+        if (count < 1) count = 1;
+        auto items = editor.Challenge.AnchoredObjects;
+        if (items.Length == 0) return Err("no items");
+        CGameCtnAnchoredObject@[] toDel;
+        uint start = items.Length > uint(count) ? items.Length - uint(count) : 0;
+        for (uint i = start; i < items.Length; i++) {
+            if (items[i] !is null) toDel.InsertLast(items[i]);
+        }
+        bool ok = false;
+        try { ok = Editor::DeleteItems(toDel, true); } catch {
+            return Err("DeleteItems threw: " + getExceptionInfo(), "epp_exception");
+        }
+        auto o = Json::Object();
+        o["deleted"] = ok;
+        o["requested"] = count;
+        return Ok(o);
+    }
+
+    Json::Value@ SelectBlock(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.PluginMapType is null) return NeedEditor();
+        if (!input.HasKey("blockName")) return Err("missing blockName");
+        bool isTerrain = false;
+        auto info = ResolveBlockModel(editor.PluginMapType, string(input["blockName"]), isTerrain);
+        if (info is null) return Err("block not found");
+        Editor::SetSelectedBlockInfo(editor, info);
+        auto o = Json::Object();
+        o["blockName"] = string(info.IdName);
         return Ok(o);
     }
 }
