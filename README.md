@@ -10,8 +10,6 @@ Does **not** remove tm-control-mcp's in-tree E++ tools.
 
 Dual-licensed: [UNLICENSE](UNLICENSE) (public domain) or [CC0 1.0](LICENSE-CC0) — choose either.
 
-Does **not** remove tm-control-mcp’s in-tree E++ tools.
-
 ## Depend
 
 - `tm-control-mcp`
