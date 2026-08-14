@@ -1,0 +1,11 @@
+[meta]
+name     = "TM MCP Pack E++"
+author   = "XertroV"
+category = "Development"
+version  = "0.1.0"
+
+[script]
+#__DEFINES__
+dependencies = ["tm-control-mcp", "Editor"]
+module = "TmMcpPackEpp"
+timeout = 15000
