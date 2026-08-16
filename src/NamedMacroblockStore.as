@@ -308,9 +308,16 @@ namespace TmMcpPackEpp {
         // Named store places via E++ freeblock placement; ground blocks would be rejected by
         // PlaceMacroblock. Normalize like the Add* tools / recorder ForceFree do.
         spec.SetAllBlocksFree();
+        // Grid blocks in native MB wire format carry layout in `coord` with a meaningless
+        // `pos` (all blocks at origin), so freeblock placement would stack them. Derive
+        // world pos from coord using the spec convention (origin block at (0,-56,0),
+        // 32m per X/Z block unit, 8m per Y unit — matches the Add* path: y=7 -> 56m).
         for (uint i = 0; i < spec.blocks.Length; i++) {
-            if (!spec.blocks[i].EnsureValidVariant()) {
-                return MakeError("block " + tostring(i) + " (" + spec.blocks[i].BlockInfo.Name + ") has no valid free variant", "INVALID_INPUT");
+            auto b = spec.blocks[i];
+            nat3 c = b.coord;
+            b.pos = vec3(float(c.x) * 32.0, float(c.y) * 8.0 - 56.0, float(c.z) * 32.0);
+            if (!b.EnsureValidVariant()) {
+                return MakeError("block " + tostring(i) + " (" + b.BlockInfo.Name + ") has no valid free variant", "INVALID_INPUT");
             }
         }
 
