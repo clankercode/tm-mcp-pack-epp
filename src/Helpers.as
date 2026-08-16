@@ -94,6 +94,7 @@ namespace TmMcpPackEpp {
 
     bool HasTransformInput(Json::Value &in input) {
         return input.HasKey("offsetX") || input.HasKey("offsetY") || input.HasKey("offsetZ")
+            || input.HasKey("x") || input.HasKey("y") || input.HasKey("z")
             || input.HasKey("pitch") || input.HasKey("yaw") || input.HasKey("roll")
             || input.HasKey("pitchRad") || input.HasKey("yawRad") || input.HasKey("rollRad");
     }

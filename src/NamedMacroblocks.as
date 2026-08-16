@@ -281,6 +281,17 @@ namespace TmMcpPackEpp {
         bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
         bool autofocus = input.HasKey("autofocus") ? bool(input["autofocus"]) : true;
         vec3 offset = OptionalOffsetInput(input);
+        // x/y/z = target world position (meters) for the spec origin (min coord 0,1,0 —
+        // E++ macroblock convention). Spec origin sits at world -MacroblockInternalOffset()
+        // = (0,-56,0), so the required translate is target + MacroblockInternalOffset().
+        if (input.HasKey("x") || input.HasKey("y") || input.HasKey("z")) {
+            vec3 target = vec3(
+                input.HasKey("x") ? float(input["x"]) : 0.0,
+                input.HasKey("y") ? float(input["y"]) : -56.0,
+                input.HasKey("z") ? float(input["z"]) : 0.0
+            );
+            offset = target + MacroblockInternalOffset();
+        }
         vec3 rotation = RotationInput(input);
         vec3 pivot = PivotInput(input);
         bool transformed = HasTransformInput(input);
@@ -329,7 +340,7 @@ namespace TmMcpPackEpp {
         output["mapPre"] = mapPre;
         output["mapPost"] = MapSummary(editor);
         RememberMapDelta("PlaceNamedMacroblock", mapPre, output["mapPost"]);
-        if (placed) RecordTaggedNamedMacroblock(input, placedMb, blockBaseIndex, itemBaseIndex);
+        if (placed) RecordTaggedNamedMacroblock(editor, input, placedMb, blockBaseIndex, itemBaseIndex);
         string agentTag = ResolvePlacementTag(input);
         if (agentTag.Length > 0) output["agentTag"] = agentTag;
         if (error.Length > 0) output["error"] = error;
