@@ -344,14 +344,29 @@ namespace TmMcpPackEpp {
         return "";
     }
 
-    // Freeblock normalization + coord->pos derivation for imported native models
-    // whose wire-format pos is meaningless (all at origin). Returns "" on success.
+    // Freeblock normalization + pos/coord->pos derivation for imported native
+    // models. Two wire shapes exist:
+    //  a) authored/saved models: spec.pos already carries internalPos layout
+    //     (varies per block; y includes the +MPO offset) — keep it.
+    //  b) stock inventory grid models: pos is uniform (meaningless) and layout
+    //     lives in coord — derive pos = coord * blockSize - MPO.
+    // Heuristic: if any two blocks have differing pos, pos is layout-bearing.
     string NormalizeSpecForNamedStore(Editor::MacroblockSpec@ spec) {
         spec.SetAllBlocksFree();
+        bool posIsUniform = true;
+        vec3 first = spec.blocks.Length > 0 ? spec.blocks[0].pos : vec3();
+        for (uint i = 1; i < spec.blocks.Length && posIsUniform; i++) {
+            vec3 p = spec.blocks[i].pos;
+            if (Math::Abs(p.x - first.x) > 0.01 || Math::Abs(p.y - first.y) > 0.01 || Math::Abs(p.z - first.z) > 0.01) {
+                posIsUniform = false;
+            }
+        }
         for (uint i = 0; i < spec.blocks.Length; i++) {
             auto b = spec.blocks[i];
-            nat3 c = b.coord;
-            b.pos = vec3(float(c.x) * 32.0, float(c.y) * 8.0 - 56.0, float(c.z) * 32.0);
+            if (posIsUniform) {
+                nat3 c = b.coord;
+                b.pos = vec3(float(c.x) * 32.0, float(c.y) * 8.0 - 56.0, float(c.z) * 32.0);
+            }
             if (!b.EnsureValidVariant()) {
                 return "block " + tostring(i) + " (" + b.BlockInfo.Name + ") has no valid free variant";
             }

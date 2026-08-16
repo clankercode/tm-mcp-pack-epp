@@ -526,6 +526,25 @@ namespace TmMcpPackEpp {
         return MakeSuccess(output);
     }
 
+    // Move the editor cursor to a world position (E++ SetAllCursorPos).
+    // Used by tm-agent's query-follow so the user sees exactly which block
+    // the agent is inspecting.
+    Json::Value@ MoveCursorToWorld(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.Cursor is null) return MakeError("editor not available", "NOT_IN_EDITOR", true, "Editor");
+        if (!input.HasKey("x") || !input.HasKey("y") || !input.HasKey("z")) return MakeError("missing x, y, z");
+        vec3 pos = PositionInput(input);
+        try {
+            Editor::SetAllCursorPos(pos);
+        } catch {
+            return MakeError("SetAllCursorPos threw: " + getExceptionInfo(), "UNKNOWN", true);
+        }
+        Json::Value output = Json::Object();
+        output["pos"] = Vec3ToJson(pos);
+        output["coord"] = CoordToJson(editor.Cursor.Coord);
+        return MakeSuccess(output);
+    }
+
     Json::Value@ FocusCamera(Json::Value &in input) {
         auto editor = GetEditor();
         if (editor is null || editor.PluginMapType is null) return MakeError("editor not available", "NOT_IN_EDITOR", true, "Editor");

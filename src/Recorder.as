@@ -10,6 +10,61 @@ namespace TmMcpPackEpp {
     // macroblock via a background coroutine (cursor control + several frames);
     // poll HasExisting / CompletedRec_* for completion.
 
+    // Control-tree navigation (mirrors E++ CControlNavigation — not exported).
+    CControlBase@ FollowCtrlPath(CControlContainer@ c, string[] &in path) {
+        for (uint i = 0; i < path.Length; i++) {
+            MwId want = MwId();
+            want.SetName(path[i]);
+            CControlBase@ hit = null;
+            if (c.Id.Value == want.Value) @hit = c;
+            if (hit is null) {
+                for (uint k = 0; k < c.Childs.Length; k++) {
+                    if (c.Childs[k].Id.Value == want.Value) { @hit = c.Childs[k]; break; }
+                }
+            }
+            if (hit is null) return null;
+            if (i == path.Length - 1) return hit;
+            @c = cast<CControlContainer>(hit);
+            if (c is null) return null;
+        }
+        return null;
+    }
+
+    // A modal dialog blocks editor automation (copy/paste, recorder transfer,
+    // saves). Returns null when nothing is blocking. Covers BasicDialogs
+    // (engine message/yes-no dialogs) and ActiveMenus (manialink-layer dialogs,
+    // e.g. the snap editor or save-as UI).
+    Json::Value@ ActiveDialogJson() {
+        auto app = cast<CGameCtnApp>(GetApp());
+        if (app is null) return null;
+        Json::Value@ j = null;
+        if (app.BasicDialogs !is null) {
+            auto dlg = app.BasicDialogs;
+            if (int(dlg.Dialog) != 0) {
+                @j = Json::Object();
+                j["dialog"] = tostring(int(dlg.Dialog));
+                if (dlg.Message_LabelText.Length > 0) j["message"] = dlg.Message_LabelText;
+                if (dlg.WaitMessage_LabelText.Length > 0) j["waitMessage"] = dlg.WaitMessage_LabelText;
+            }
+        }
+        if (app.ActiveMenus.Length > 0) {
+            if (j is null) @j = Json::Object();
+            j["activeMenus"] = int(app.ActiveMenus.Length);
+        }
+        if (j is null) return null;
+        j["dismiss"] = "DismissDialogs tool (engine HideDialogs), or the dialog's own confirm/cancel; manialink-layer menus may need their own UI action";
+        return j;
+    }
+
+    Json::Value@ DismissDialogs(Json::Value &in input) {
+        auto app = cast<CGameCtnApp>(GetApp());
+        if (app is null || app.BasicDialogs is null) return MakeError("app not available", "UNKNOWN", true);
+        app.BasicDialogs.HideDialogs();
+        Json::Value output = Json::Object();
+        output["dismissed"] = true;
+        return MakeSuccess(output);
+    }
+
     Json::Value RecorderStatusJson() {
         Json::Value s = Json::Object();
         s["isActive"] = MacroblockRecorder::IsActive;
@@ -19,6 +74,8 @@ namespace TmMcpPackEpp {
         s["activeItems"] = int(MacroblockRecorder::ActiveRec_NbItems);
         s["completedBlocks"] = int(MacroblockRecorder::CompletedRec_NbBlocks);
         s["completedItems"] = int(MacroblockRecorder::CompletedRec_NbItems);
+        auto dlg = ActiveDialogJson();
+        if (dlg !is null) s["blockingDialog"] = dlg;
         s["note"] = "stop (cancel=false) keeps the recording as the completed MB (async transfer to copy-paste); poll status until hasExisting && !isActive.";
         return s;
     }
@@ -70,6 +127,198 @@ namespace TmMcpPackEpp {
             if (stored is null) output["storeError"] = "failed to store (empty spec or duplicate name; pass replace=true)";
         }
         output["note"] = "Spec pos are world-authored. Stored specs place via PlaceNamedMacroblock with x/y/z = target world pos for the spec's lowest content.";
+        return MakeSuccess(output);
+    }
+
+    // Native save: writes <name>.Macroblock.Gbx into Documents/Trackmania/MacroBlocks/
+    // via the engine's pmt.SaveMacroblock (RE'd pipeline: Fid dir 0x16, inventory
+    // tree insert + MacroblockModels refresh happen in-engine).
+    Json::Value@ SaveMacroblockFile(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.PluginMapType is null) return MakeError("editor not available", "NOT_IN_EDITOR", true, "Editor");
+        if (!input.HasKey("name")) return MakeError("missing name");
+        string name = string(input["name"]);
+        string source = input.HasKey("source") ? string(input["source"]) : "recorder";
+
+        CGameCtnMacroBlockInfo@ mb = null;
+        string sourceNote = "";
+        if (source == "recorder" || source == "copyPaste") {
+            // recorder stop transfers the recording to editor.CopyPasteMacroBlockInfo
+            // asynchronously (cursor coroutine, several frames) — poll for it.
+            for (uint i = 0; i < 120 && mb is null; i++) {
+                if (i > 0) yield();
+                @mb = editor.CopyPasteMacroBlockInfo;
+            }
+            if (mb !is null) {
+                sourceNote = "editor.CopyPasteMacroBlockInfo (recorder stop target)";
+            } else {
+                return MakeError("no copy-paste macroblock available; record + stop (cancel=false) first, or copy a selection", "NOT_FOUND", true, "", "StopRecording(false) transfers asynchronously; retry after a moment");
+            }
+        } else if (source == "tagged") {
+            // Region-select the live map blocks recorded under a placement tag, then
+            // let the engine copy them into a native CopyPasteMacroBlockInfo.
+            if (!input.HasKey("tag")) return MakeError("source=tagged requires tag", "INVALID_INPUT");
+            string tag = string(input["tag"]);
+            // gather tagged block positions (world pos, recorded at placement time)
+            if (editor.Challenge is null) return MakeError("no challenge", "NOT_IN_EDITOR", true, "Editor");
+            array<vec3> tagPos;
+            for (uint i = 0; i < g_TaggedObjects.Length; i++) {
+                auto o = g_TaggedObjects[i];
+                if (o.tag != tag || o.kind != "block") continue;
+                tagPos.InsertLast(vec3(o.x, o.y, o.z));
+            }
+            if (tagPos.Length == 0) return MakeError("no tagged blocks found for tag: " + tag, "NOT_FOUND");
+            // resolve tagged positions to live blocks (match by pos proximity)
+            int3 lo = int3(0x7fffffff, 0x7fffffff, 0x7fffffff);
+            int3 hi = int3(0, 0, 0);
+            uint found = 0;
+            auto blocks = editor.Challenge.Blocks;
+            for (uint b = 0; b < blocks.Length; b++) {
+                auto blk = blocks[b];
+                vec3 wpos = Editor::GetBlockLocation(blk);
+                bool match = false;
+                for (uint t = 0; t < tagPos.Length; t++) {
+                    if (Math::Abs(wpos.x - tagPos[t].x) < 1.0 && Math::Abs(wpos.y - tagPos[t].y) < 1.0 && Math::Abs(wpos.z - tagPos[t].z) < 1.0) {
+                        match = true;
+                        break;
+                    }
+                }
+                if (!match) continue;
+                nat3 bCoord = blk.Coord;
+                lo.x = Math::Min(lo.x, bCoord.x); lo.y = Math::Min(lo.y, bCoord.y); lo.z = Math::Min(lo.z, bCoord.z);
+                hi.x = Math::Max(hi.x, bCoord.x); hi.y = Math::Max(hi.y, bCoord.y); hi.z = Math::Max(hi.z, bCoord.z);
+                found++;
+            }
+            if (found == 0) return MakeError("tag " + tag + " resolved to no live blocks (placements may have moved)", "NOT_FOUND");
+            auto pmt = editor.PluginMapType;
+            // Mirror E++ TransferRecordedMbToEditorCopyPasteMb: enter copy-paste mode
+            // first, otherwise CopyPaste_Copy operates outside its expected UI state.
+            // (Idempotent: setting CopyPaste when already in it is a no-op.)
+            Editor::SetPlacementMode(editor, CGameEditorPluginMap::EPlaceMode::CopyPaste);
+            for (uint i = 0; i < 3; i++) yield();
+            pmt.CopyPaste_ResetSelection();
+            pmt.CopyPaste_AddOrSubSelection(lo, hi);
+            for (uint i = 0; i < 3; i++) yield();
+            pmt.CopyPaste_Copy();
+            for (uint i = 0; i < 60 && editor.CopyPasteMacroBlockInfo is null; i++) yield();
+            @mb = editor.CopyPasteMacroBlockInfo;
+            if (mb is null) {
+                pmt.CopyPaste_ResetSelection();
+                Json::Value err = MakeError("engine copy produced no macroblock (selection " + found + " blocks, bbox " + tostring(lo) + ".." + tostring(hi) + "); copy-paste UI state may require the selection tool", "UNKNOWN", true);
+                auto dlg = ActiveDialogJson();
+                if (dlg !is null) err["blockingDialog"] = dlg;
+                return err;
+            }
+            sourceNote = "engine CopyPaste_Copy of tag '" + tag + "' (" + found + " blocks)";
+        } else {
+            return MakeError("unknown source: " + source + " (recorder|copyPaste|tagged)", "INVALID_INPUT");
+        }
+
+        // ---- Native save via the engine's own UI flow (the same one E++
+        // automates and the game uses): toolbar "save macroblock" -> snap
+        // camera scene -> OK -> save-as dialog -> filename -> validate.
+        // (The bare pmt.SaveMacroblock(mb) MS call no-ops: the filename is
+        // built from dialog-provided name strings that only the UI path sets.)
+        auto app = cast<CGameCtnApp>(GetApp());
+        if (app is null) return MakeError("app not available", "UNKNOWN", true);
+        uint mbBefore = editor.PluginMapType.MacroblockModels.Length;
+
+        CControlButton@ saveMbBtn = cast<CControlButton>(FollowCtrlPath(editor.EditorInterface.InterfaceRoot,
+            {"FrameMain", "FrameCopyPasteTools", "FrameMacroblock", "ButtonSelectionBoxSaveNew"}));
+        if (saveMbBtn is null) return MakeError("save-macroblock toolbar button not found (copy-paste mode?)", "UNKNOWN", true);
+        if (source != "recorder" && source != "copyPaste" && source != "tagged") {
+            return MakeError("unknown source: " + source + " (recorder|copyPaste|tagged)", "INVALID_INPUT");
+        }
+
+        // stage 1: click save-macroblock -> snap camera scene opens
+        Json::Value stages = Json::Array();
+        saveMbBtn.OnAction();
+        CControlButton@ snapOkBtn = null;
+        for (uint i = 0; i < 300; i++) {
+            yield();
+            @snapOkBtn = cast<CControlButton>(FollowCtrlPath(editor.EditorInterface.InterfaceRoot,
+                {"FrameEditSnapCamera", "ButtonOk"}));
+            if (snapOkBtn !is null && snapOkBtn.IsVisible && snapOkBtn.Parent.IsVisible) break;
+            @snapOkBtn = null;
+        }
+        if (snapOkBtn is null) {
+            Json::Value err = MakeError("snap-camera scene did not open after clicking save-macroblock", "UNKNOWN", true);
+            auto dlg = ActiveDialogJson();
+            if (dlg !is null) err["blockingDialog"] = dlg;
+            return err;
+        }
+        stages.Add("snapSceneOpened");
+
+        // stage 2: confirm snap -> save-as dialog opens
+        snapOkBtn.OnAction();
+        CGameMenuFrame@ saveAs = null;
+        for (uint i = 0; i < 300; i++) {
+            yield();
+            auto cf = app.BasicDialogs.Dialogs.CurrentFrame;
+            if (cf !is null && cf.IdName == "FrameDialogSaveAs") { @saveAs = cf; break; }
+        }
+        if (saveAs is null) {
+            Json::Value err = MakeError("save-as dialog did not open after confirming the snapshot", "UNKNOWN", true);
+            auto dlg = ActiveDialogJson();
+            if (dlg !is null) err["blockingDialog"] = dlg;
+            return err;
+        }
+        stages.Add("saveAsDialogOpened");
+
+        // stage 3: set filename + validate
+        auto entryPath = cast<CControlEntry>(FollowCtrlPath(saveAs, {"FrameContent", "FrameSave", "EntryFileName"}));
+        if (entryPath is null) return MakeError("save-as filename entry not found", "UNKNOWN", true);
+        auto d = cast<CGameDialogs>(entryPath.Nod);
+        if (d is null) return MakeError("save-as filename entry nod is not CGameDialogs", "UNKNOWN", true);
+        d.String = name + ".Macroblock.Gbx";
+        yield();
+        app.BasicDialogs.DialogSaveAs_OnValidate();
+        stages.Add("validated");
+
+        // stage 4: possible overwrite prompt -> click Yes
+        for (uint i = 0; i < 30; i++) {
+            yield();
+            if (int(app.BasicDialogs.Dialog) != 0) {
+                app.BasicDialogs.AskYesNo_Yes();
+                stages.Add("overwriteConfirmed");
+                break;
+            }
+        }
+
+        // stage 5: wait for the file on disk. The save-as dialog defaults to
+        // Documents/Trackmania/Blocks/<Collection>/ (observed) — index the
+        // Blocks tree for the filename; also check MacroBlocks/.
+        string foundPath = "";
+        string wantFile = name + ".Macroblock.Gbx";
+        for (uint i = 0; i < 300 && foundPath.Length == 0; i++) {
+            yield();
+            if (IO::FileExists("C:/users/steamuser/Documents/Trackmania/MacroBlocks/" + wantFile)) {
+                foundPath = "C:/users/steamuser/Documents/Trackmania/MacroBlocks/" + wantFile;
+                break;
+            }
+            string[] results = IO::IndexFolder("C:/users/steamuser/Documents/Trackmania/Blocks/", true);
+            for (uint c = 0; c < results.Length; c++) {
+                if (results[c].EndsWith(wantFile)) { foundPath = "C:/users/steamuser/Documents/Trackmania/Blocks/" + results[c]; break; }
+            }
+        }
+
+        uint mbAfter = editor.PluginMapType.MacroblockModels.Length;
+        Json::Value output = Json::Object();
+        output["saved"] = foundPath.Length > 0;
+        output["name"] = name;
+        output["fileName"] = name + ".Macroblock.Gbx";
+        output["filePath"] = foundPath;
+        output["stages"] = stages;
+        output["source"] = sourceNote;
+        output["inventoryCountBefore"] = int(mbBefore);
+        output["inventoryCountAfter"] = int(mbAfter);
+        if (foundPath.Length == 0) {
+            output["error"] = "dialog flow completed but no file appeared on disk";
+            auto dlg = ActiveDialogJson();
+            if (dlg !is null) output["blockingDialog"] = dlg;
+        } else {
+            output["note"] = "Native .Macroblock.Gbx written; inventory refreshes in-engine (verify with InspectMacroblockModel).";
+        }
         return MakeSuccess(output);
     }
 #endif

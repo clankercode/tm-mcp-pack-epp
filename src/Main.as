@@ -26,6 +26,7 @@ namespace TmMcpPackEpp {
         if (name == "GetInventorySummary") return GetInventorySummary(input);
         if (name == "ControlInventory") return ControlInventory(input);
         if (name == "FocusCamera") return FocusCamera(input);
+        if (name == "MoveCursorToWorld") return MoveCursorToWorld(input);
         if (name == "SetCamGoTo") return SetCamGoTo(input);
         if (name == "ControlMapObjectives") return ControlMapObjectives(input);
         if (name == "ControlEditMode") return ControlEditMode(input);
@@ -56,6 +57,7 @@ namespace TmMcpPackEpp {
         if (name == "PreflightNamedMacroblockPlacement") return PreflightNamedMacroblockPlacement(input);
         if (name == "SaveNamedMacroblock") return SaveNamedMacroblock(input);
         if (name == "LoadNamedMacroblock") return LoadNamedMacroblock(input);
+        if (name == "SaveMacroblockFile") return SaveMacroblockFile(input);
         if (name == "ImportMacroblockModelToNamed") return ImportMacroblockModelToNamed(input);
         if (name == "ListSavedNamedMacroblocks") return ListSavedNamedMacroblocks(input);
         if (name == "RemoveBlocksByIndex") return RemoveBlocksByIndex(input);
@@ -63,6 +65,7 @@ namespace TmMcpPackEpp {
         if (name == "InspectMacroblockModel") return InspectMacroblockModel(input);
         if (name == "ControlMacroblockRecorder") return ControlMacroblockRecorder(input);
         if (name == "GetRecordedMacroblockSpec") return GetRecordedMacroblockSpec(input);
+        if (name == "DismissDialogs") return DismissDialogs(input);
         if (name == "ListMacroblockInstances") return ListMacroblockInstances(input);
         if (name == "SetAgentTag") return SetAgentTag(input);
         if (name == "ListTagged") return ListTagged(input);
@@ -103,6 +106,7 @@ namespace TmMcpPackEpp {
         Add(b, "RefreshInventory", "Refresh E++ inventory cache.", '{"type":"object","properties":{},"additionalProperties":false}');
         Add(b, "GetInventorySummary", "E++ inventory item count + scan flag.", '{"type":"object","properties":{},"additionalProperties":false}');
         Add(b, "ControlInventory", "Editor inventory browse/select (E++ IInvCache).", '{"type":"object","properties":{"action":{"type":"string"},"type":{"type":"string"},"query":{"type":"string"},"path":{"type":"string"},"name":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":false}');
+        Add(b, "MoveCursorToWorld", "Move the editor cursor to a world position (E++ SetAllCursorPos). Useful to show which block/spot is being inspected.", '{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"}},"required":["x","y","z"],"additionalProperties":false}');
         Add(b, "FocusCamera", "E++ SetCamAnimationGoTo looking at x,y,z.", '{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"distance":{"type":"number"}},"required":["x","y","z"],"additionalProperties":false}');
         Add(b, "SetCamGoTo", "E++ SetCamAnimationGoTo with h/v look angles.", '{"type":"object","properties":{"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"h":{"type":"number"},"v":{"type":"number"},"distance":{"type":"number"}},"required":["x","y","z"],"additionalProperties":false}');
         Add(b, "ControlMapObjectives", "E++ get/set clones and laps. action=get|set.", '{"type":"object","properties":{"action":{"type":"string"},"nbClones":{"type":"integer"},"nbLaps":{"type":"integer"},"isLapRace":{"type":"boolean"}},"additionalProperties":false}');
@@ -133,6 +137,8 @@ namespace TmMcpPackEpp {
         Add(b, "PlaceNamedMacroblock", "Place a named macroblock with optional offset/rotation/tag.", '{"type":"object","properties":{"name":{"type":"string"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"pitch":{"type":"number"},"yaw":{"type":"number"},"roll":{"type":"number"},"pivotX":{"type":"number"},"pivotY":{"type":"number"},"pivotZ":{"type":"number"},"autofocus":{"type":"boolean"},"addUndo":{"type":"boolean"},"tag":{"type":"string"}},"required":["name","x","y","z"],"additionalProperties":false}');
         Add(b, "PreflightNamedMacroblockPlacement", "Dry-run placement checks for a named macroblock.", '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}');
         Add(b, "SaveNamedMacroblock", "Persist a named macroblock spec to plugin data.", '{"type":"object","properties":{"name":{"type":"string"},"fileName":{"type":"string"}},"required":["name"],"additionalProperties":false}');
+        Add(b, "DismissDialogs", "Dismiss any modal dialog currently blocking editor automation. Check GetDialog first.", '{"type":"object","properties":{},"additionalProperties":false}');
+        Add(b, "SaveMacroblockFile", "Save a native .Macroblock.Gbx (real game file; auto-appears in the macroblock inventory). Sources: recorder stop-transfer (recorder/copyPaste) or tagged live placements (tagged + tag). Drives the engine's own save UI flow (snap scene + save-as dialog), so the file lands where the game puts saved macroblocks (Documents/Trackmania/Blocks/<Collection>/).", '{"type":"object","properties":{"name":{"type":"string"},"source":{"type":"string","enum":["recorder","copyPaste","tagged"]},"tag":{"type":"string"}},"required":["name"],"additionalProperties":false}');
         Add(b, "LoadNamedMacroblock", "Load a named macroblock spec from plugin data.", '{"type":"object","properties":{"name":{"type":"string"},"fileName":{"type":"string"},"replace":{"type":"boolean"}},"additionalProperties":false}');
         Add(b, "ImportMacroblockModelToNamed", "Import a native macroblock model (by name/path/index) into the named store as an E++ spec.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"asName":{"type":"string"},"replace":{"type":"boolean"}},"required":["asName"],"additionalProperties":false}');
         Add(b, "ListSavedNamedMacroblocks", "List saved named macroblock files.", '{"type":"object","properties":{},"additionalProperties":false}');
@@ -150,6 +156,12 @@ namespace TmMcpPackEpp {
         Add(b, "ListCoverage", "List this pack's tools.", '{"type":"object","properties":{},"additionalProperties":false}');
         b.SetDispatch(Dispatch);
         auto r = TmMcp::RegisterToolPack(b);
+        if (r !is null && r.HasKey("error") && string(r["error"]) == "pack 'tm-mcp-pack-epp' is already registered; UnregisterToolPack first") {
+            // reload race: our own OnDestroyed may have run after the fresh Main().
+            // Drop the stale entry and retry once.
+            TmMcp::UnregisterToolPack("tm-mcp-pack-epp");
+            r = TmMcp::RegisterToolPack(b);
+        }
         if (r is null || !r.HasKey("success") || !bool(r["success"])) {
             string err = (r !is null && r.HasKey("error")) ? string(r["error"]) : "null";
             warn("tm-mcp-pack-epp register failed: " + err);
