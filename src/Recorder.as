@@ -46,6 +46,25 @@ namespace TmMcpPackEpp {
                 if (dlg.Message_LabelText.Length > 0) j["message"] = dlg.Message_LabelText;
                 if (dlg.WaitMessage_LabelText.Length > 0) j["waitMessage"] = dlg.WaitMessage_LabelText;
             }
+            // Menu-layer dialog frames (save-as, yes/no overwrite prompts):
+            // read the current frame's id + message label so agents can see
+            // and decide on them (e.g. FrameAskYesNo overwrite confirmations).
+            auto cf = dlg.Dialogs.CurrentFrame;
+            if (cf !is null) {
+                if (j is null) @j = Json::Object();
+                j["frame"] = cf.IdName;
+                // E++ chain {1,0,2,0} from FrameAskYesNo -> message label
+                string frameLabel = FrameMessageLabel(cf);
+                if (frameLabel.Length > 0) j["frameMessage"] = frameLabel;
+                if (cf.IdName == "FrameAskYesNo") {
+                    j["type"] = "yesNo";
+                    j["respond"] = "RespondDialog tool: respond=yes|no|cancel";
+                } else if (cf.IdName == "FrameDialogSaveAs") {
+                    j["type"] = "saveAs";
+                    j["path"] = dlg.DialogSaveAs_PathToDisplay;
+                    j["respond"] = "driven by SaveMacroblockFile; DialogSaveAs_OnValidate/OnCancel via RespondDialog (confirmSaveAs|cancelSaveAs)";
+                }
+            }
         }
         if (app.ActiveMenus.Length > 0) {
             if (j is null) @j = Json::Object();
@@ -56,12 +75,83 @@ namespace TmMcpPackEpp {
         return j;
     }
 
+    // FrameAskYesNo-style message label at E++ chain {1,0,2,0}; empty string if absent.
+    string FrameMessageLabel(CGameMenuFrame@ frame) {
+        if (frame is null) return "";
+        try {
+            auto c1 = FrameChildByChain(frame, {1, 0, 2, 0});
+            auto label = cast<CControlLabel>(c1);
+            if (label !is null) return label.Label;
+        } catch {
+            return "";
+        }
+        return "";
+    }
+
+    // Generic child-by-index chain walker (E++ GetFrameChildFromChain pattern).
+    CControlBase@ FrameChildByChain(CGameMenuFrame@ frame, array<int> chain) {
+        CControlContainer@ cur = frame;
+        for (uint i = 0; i < chain.Length; i++) {
+            if (cur is null || chain[i] < 0 || uint(chain[i]) >= cur.Childs.Length) return null;
+            if (i == chain.Length - 1) return cur.Childs[uint(chain[i])];
+            @cur = cast<CControlContainer>(cur.Childs[uint(chain[i])]);
+        }
+        return null;
+    }
+
     Json::Value@ DismissDialogs(Json::Value &in input) {
         auto app = cast<CGameCtnApp>(GetApp());
         if (app is null || app.BasicDialogs is null) return MakeError("app not available", "UNKNOWN", true);
         app.BasicDialogs.HideDialogs();
         Json::Value output = Json::Object();
         output["dismissed"] = true;
+        return MakeSuccess(output);
+    }
+
+    // Inspect the current blocking dialog (no side effects).
+    Json::Value@ GetDialog(Json::Value &in input) {
+        auto dlg = ActiveDialogJson();
+        if (dlg is null) {
+            Json::Value output = Json::Object();
+            output["open"] = false;
+            return MakeSuccess(output);
+        }
+        dlg["open"] = true;
+        return MakeSuccess(dlg);
+    }
+
+    // Answer an engine dialog: yes/no/cancel (yes-no prompts incl. overwrite),
+    // ok (message dialogs), confirmSaveAs/cancelSaveAs (save-as frame).
+    Json::Value@ RespondDialog(Json::Value &in input) {
+        auto app = cast<CGameCtnApp>(GetApp());
+        if (app is null || app.BasicDialogs is null) return MakeError("app not available", "UNKNOWN", true);
+        string respond = input.HasKey("respond") ? string(input["respond"]) : "";
+        auto dlg = ActiveDialogJson();
+        if (dlg is null) return MakeError("no dialog open", "NOT_FOUND", false, "", "Poll GetDialog");
+        string frame = dlg.HasKey("frame") ? string(dlg["frame"]) : "";
+        auto bd = app.BasicDialogs;
+        if (respond == "yes") {
+            if (frame != "FrameAskYesNo") return MakeError("respond=yes needs a FrameAskYesNo dialog; current frame: " + frame, "INVALID_INPUT", false, "", "GetDialog");
+            bd.AskYesNo_Yes();
+        } else if (respond == "no") {
+            if (frame != "FrameAskYesNo") return MakeError("respond=no needs a FrameAskYesNo dialog; current frame: " + frame, "INVALID_INPUT", false, "", "GetDialog");
+            bd.AskYesNo_No();
+        } else if (respond == "cancel") {
+            bd.AskYesNo_Cancel();
+        } else if (respond == "ok") {
+            bd.DoMessage_Ok();
+        } else if (respond == "confirmSaveAs") {
+            if (frame != "FrameDialogSaveAs") return MakeError("respond=confirmSaveAs needs the save-as dialog; current frame: " + frame, "INVALID_INPUT", false, "", "GetDialog");
+            bd.DialogSaveAs_OnValidate();
+        } else if (respond == "cancelSaveAs") {
+            if (frame != "FrameDialogSaveAs") return MakeError("respond=cancelSaveAs needs the save-as dialog; current frame: " + frame, "INVALID_INPUT", false, "", "GetDialog");
+            bd.DialogSaveAs_OnCancel();
+        } else {
+            return MakeError("unknown respond: " + respond + " (yes|no|cancel|ok|confirmSaveAs|cancelSaveAs)", "INVALID_INPUT");
+        }
+        Json::Value output = Json::Object();
+        output["responded"] = respond;
+        output["frame"] = frame;
         return MakeSuccess(output);
     }
 
@@ -139,6 +229,7 @@ namespace TmMcpPackEpp {
         if (!input.HasKey("name")) return MakeError("missing name");
         string name = string(input["name"]);
         string source = input.HasKey("source") ? string(input["source"]) : "recorder";
+        bool overwrite = input.HasKey("overwrite") ? bool(input["overwrite"]) : false;
 
         CGameCtnMacroBlockInfo@ mb = null;
         string sourceNote = "";
@@ -282,13 +373,32 @@ namespace TmMcpPackEpp {
         app.BasicDialogs.DialogSaveAs_OnValidate();
         stages.Add("validated");
 
-        // stage 4: possible overwrite prompt -> click Yes
-        for (uint i = 0; i < 30; i++) {
+        // stage 4: overwrite prompt? Detect FrameAskYesNo. With overwrite=true
+        // auto-confirm Yes; otherwise report it and leave the dialog open for
+        // the agent to decide via RespondDialog (yes/no/cancel).
+        bool sawOverwrite = false;
+        for (uint i = 0; i < 60; i++) {
             yield();
-            if (int(app.BasicDialogs.Dialog) != 0) {
+            auto cf = app.BasicDialogs.Dialogs.CurrentFrame;
+            if (cf !is null && cf.IdName == "FrameAskYesNo") { sawOverwrite = true; break; }
+        }
+        if (sawOverwrite) {
+            stages.Add("overwritePrompted");
+            if (overwrite) {
                 app.BasicDialogs.AskYesNo_Yes();
                 stages.Add("overwriteConfirmed");
-                break;
+            } else {
+                string msg = FrameMessageLabel(app.BasicDialogs.Dialogs.CurrentFrame);
+                Json::Value output = Json::Object();
+                output["saved"] = false;
+                output["name"] = name;
+                output["fileName"] = name + ".Macroblock.Gbx";
+                output["stages"] = stages;
+                output["source"] = sourceNote;
+                output["overwritePrompt"] = true;
+                output["message"] = msg;
+                output["note"] = "A file with this name already exists. The overwrite prompt is OPEN — call RespondDialog {respond:\"yes\"} to overwrite, {\"no\"|\"cancel\"} to abort; then SaveMacroblockFile again if needed.";
+                return MakeSuccess(output);
             }
         }
 
