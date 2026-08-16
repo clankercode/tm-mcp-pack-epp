@@ -299,6 +299,7 @@ namespace TmMcpPackEpp {
             "RespondDialog",
             "SummarizeMap",
             "ZoomRegion",
+            "CheckCheckpoints",
             "MoveCursorToWorld",
             "ListMacroblockInstances",
             "SetAgentTag",
