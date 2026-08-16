@@ -327,6 +327,13 @@ namespace TmMcpPackEpp {
         auto o = Json::Object();
         o["ok"] = ok;
         o["pos"] = Vec3ToJson(pos);
+        // E++ LookUV: v=1.0 == 90deg. |v|>1 flips the camera upside-down.
+        if (Math::Abs(v) > 1.0) {
+            float vDeg = v * 90.0;
+            float equivV = 180.0 - vDeg;
+            float equivH = h * 90.0 + 180.0;
+            o["warning"] = "v=" + tostring(v) + " (vDeg " + tostring(int(Math::Round(vDeg))) + ") is beyond the +/-90deg pole: the camera is upside-down (world appears flipped 180deg). If that was not intended, the equivalent upright view is v=" + tostring(equivV / 90.0) + ", h=" + tostring(equivH / 90.0) + ".";
+        }
         return Ok(o);
     }
 
