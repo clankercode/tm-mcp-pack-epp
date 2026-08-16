@@ -177,18 +177,28 @@ namespace TmMcpPackEpp {
     }
 
 #if DEPENDENCY_EDITOR
-    void RecordTaggedNamedMacroblock(Json::Value &in input, Editor::MacroblockSpec@ placedMb, int blockBaseIndex, int itemBaseIndex) {
+    void RecordTaggedNamedMacroblock(CGameCtnEditorFree@ editor, Json::Value &in input, Editor::MacroblockSpec@ placedMb, int blockBaseIndex, int itemBaseIndex) {
         string tag = ResolvePlacementTag(input);
-        if (tag.Length == 0 || placedMb is null) return;
+        if (tag.Length == 0 || placedMb is null || editor is null || editor.Challenge is null) return;
+        // Record the live map objects appended by the placement (blockBaseIndex..) so that
+        // RemoveByTag's live resolution (GetBlockLocation / AbsolutePositionInMap) matches.
+        // placedMb block/item pos are spec-relative and do not match world coordinates.
         for (uint i = 0; i < placedMb.blocks.Length; i++) {
-            auto block = placedMb.blocks[i];
-            if (block is null) continue;
-            RecordTaggedPlacement(tag, "block", block.name, block.pos - MacroblockInternalOffset(), blockBaseIndex + int(i));
+            int idx = blockBaseIndex + int(i);
+            if (idx < 0 || uint(idx) >= editor.Challenge.Blocks.Length) continue;
+            auto live = editor.Challenge.Blocks[uint(idx)];
+            if (live is null || live.BlockInfo is null) continue;
+            vec3 pos;
+            try { pos = Editor::GetBlockLocation(live, true); }
+            catch { pos = vec3(float(live.Coord.x) * 32.0, (float(live.Coord.y) - 8.0) * 8.0, float(live.Coord.z) * 32.0); }
+            RecordTaggedPlacement(tag, "block", string(live.BlockInfo.IdName), pos, idx);
         }
         for (uint i = 0; i < placedMb.items.Length; i++) {
-            auto item = placedMb.items[i];
-            if (item is null) continue;
-            RecordTaggedPlacement(tag, "item", item.name, item.pos - MacroblockInternalOffset(), itemBaseIndex + int(i));
+            int idx = itemBaseIndex + int(i);
+            if (idx < 0 || uint(idx) >= editor.Challenge.AnchoredObjects.Length) continue;
+            auto live = editor.Challenge.AnchoredObjects[uint(idx)];
+            if (live is null) continue;
+            RecordTaggedPlacement(tag, "item", string(live.ItemModel.IdName), live.AbsolutePositionInMap, idx);
         }
     }
 #endif
@@ -388,15 +398,37 @@ namespace TmMcpPackEpp {
                 }
             }
             if (blocksToDelete.Length > 0) {
-                blockMethod = "DeleteBlocks";
-                try {
+                bool allFree = true;
+                for (uint i = 0; i < blocksToDelete.Length; i++) {
+                    if (!Editor::IsBlockFree(blocksToDelete[i])) allFree = false;
+                }
+                int beforeBlocks = int(editor.Challenge.Blocks.Length);
+                if (allFree) {
+                    // E++ DeleteBlocks no-ops on freshly-placed free blocks without the
+                    // freeblock queue drain (same reason as RemoveBlocksByIndex).
+                    blockMethod = "DeleteFreeblocks";
+                    try {
 #if DEPENDENCY_EDITOR
-                    blocksOk = Editor::DeleteBlocks(blocksToDelete, addUndo);
+                        uint queued = Editor::DeleteFreeblocks(blocksToDelete);
+                        for (uint i = 0; i < 30 && int(editor.Challenge.Blocks.Length) == beforeBlocks; i++) yield();
+                        blocksOk = int(editor.Challenge.Blocks.Length) <= beforeBlocks - int(blocksToDelete.Length);
 #else
-                    return EditorPlusPlusMissingError();
+                        return EditorPlusPlusMissingError();
 #endif
-                } catch {
-                    return MakeError("DeleteBlocks failed: " + getExceptionInfo(), "DELETE_FAILED", true);
+                    } catch {
+                        return MakeError("DeleteFreeblocks failed: " + getExceptionInfo(), "DELETE_FAILED", true);
+                    }
+                } else {
+                    blockMethod = "DeleteBlocks";
+                    try {
+#if DEPENDENCY_EDITOR
+                        blocksOk = Editor::DeleteBlocks(blocksToDelete, addUndo);
+#else
+                        return EditorPlusPlusMissingError();
+#endif
+                    } catch {
+                        return MakeError("DeleteBlocks failed: " + getExceptionInfo(), "DELETE_FAILED", true);
+                    }
                 }
             }
             // Drop matched track entries (reverse order)
