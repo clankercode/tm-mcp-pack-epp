@@ -344,6 +344,7 @@ namespace TmMcpPackEpp {
         output["mapPost"] = MapSummary(editor);
         RememberMapDelta("PlaceNamedMacroblock", mapPre, output["mapPost"]);
         if (placed) RecordTaggedNamedMacroblock(editor, input, placedMb, blockBaseIndex, itemBaseIndex);
+        if (placed) CollectPlacementReport(editor, placedMb, blockBaseIndex, itemBaseIndex, output);
         string agentTag = ResolvePlacementTag(input);
         if (agentTag.Length > 0) output["agentTag"] = agentTag;
         if (error.Length > 0) output["error"] = error;
@@ -700,6 +701,94 @@ namespace TmMcpPackEpp {
 
     vec3 MacroblockInternalOffset() {
         return vec3(0, 56, 0);
+    }
+
+    // Placement report: what actually landed in the map, where, and whether it
+    // overlaps existing content. Reads live objects from blockBaseIndex/itemBaseIndex
+    // (appended by PlaceMacroblock) — world coords via the same readers RemoveByTag uses.
+    void CollectPlacementReport(CGameCtnEditorFree@ editor, Editor::MacroblockSpec@ placedMb, int blockBaseIndex, int itemBaseIndex, Json::Value &inout output) {
+        if (editor is null || editor.Challenge is null) return;
+        Json::Value blocksArr = Json::Array();
+        Json::Value itemsArr = Json::Array();
+        vec3 mn = vec3(1e18, 1e18, 1e18);
+        vec3 mx = vec3(-1e18, -1e18, -1e18);
+        int liveBlocks = 0;
+        int liveItems = 0;
+        for (uint i = 0; i < placedMb.blocks.Length; i++) {
+            int idx = blockBaseIndex + int(i);
+            if (idx < 0 || uint(idx) >= int(editor.Challenge.Blocks.Length)) continue;
+            auto live = editor.Challenge.Blocks[uint(idx)];
+            if (live is null || live.BlockInfo is null) continue;
+            vec3 pos;
+            try { pos = Editor::GetBlockLocation(live, true); }
+            catch { pos = vec3(float(live.Coord.x) * 32.0, (float(live.Coord.y) - 8.0) * 8.0, float(live.Coord.z) * 32.0); }
+            liveBlocks++;
+            mn = vec3(Math::Min(mn.x, pos.x), Math::Min(mn.y, pos.y), Math::Min(mn.z, pos.z));
+            mx = vec3(Math::Max(mx.x, pos.x), Math::Max(mx.y, pos.y), Math::Max(mx.z, pos.z));
+            Json::Value e = Json::Object();
+            e["name"] = string(live.BlockInfo.IdName);
+            e["pos"] = Vec3ToJson(pos);
+            e["mapIndex"] = idx;
+            blocksArr.Add(e);
+        }
+        for (uint i = 0; i < placedMb.items.Length; i++) {
+            int idx = itemBaseIndex + int(i);
+            if (idx < 0 || uint(idx) >= int(editor.Challenge.AnchoredObjects.Length)) continue;
+            auto live = editor.Challenge.AnchoredObjects[uint(idx)];
+            if (live is null) continue;
+            liveItems++;
+            vec3 pos = live.AbsolutePositionInMap;
+            mn = vec3(Math::Min(mn.x, pos.x), Math::Min(mn.y, pos.y), Math::Min(mn.z, pos.z));
+            mx = vec3(Math::Max(mx.x, pos.x), Math::Max(mx.y, pos.y), Math::Max(mx.z, pos.z));
+            Json::Value e = Json::Object();
+            e["name"] = live.ItemModel is null ? "" : string(live.ItemModel.IdName);
+            e["pos"] = Vec3ToJson(pos);
+            e["mapIndex"] = idx;
+            itemsArr.Add(e);
+        }
+        output["placedBlocks"] = blocksArr;
+        output["placedItems"] = itemsArr;
+        if (liveBlocks + liveItems == 0) return;
+        output["placedBounds"] = Json::Object();
+        output["placedBounds"]["min"] = Vec3ToJson(mn);
+        output["placedBounds"]["max"] = Vec3ToJson(mx);
+        // Overlap check: pre-existing block within 16m XZ / 8m Y of a placed block.
+        // Free blocks have meaningless Coord, so compare live positions (same reader
+        // RemoveByTag uses). Warn only — stacking is sometimes intentional.
+        Json::Value overlaps = Json::Array();
+        int overlapCount = 0;
+        for (uint i = 0; i < blocksArr.Length; i++) {
+            vec3 p = vec3(
+                float(blocksArr[i]["pos"]["x"]),
+                float(blocksArr[i]["pos"]["y"]),
+                float(blocksArr[i]["pos"]["z"])
+            );
+            for (uint j = 0; j < editor.Challenge.Blocks.Length; j++) {
+                if (int(j) >= blockBaseIndex) break; // only pre-existing
+                auto b = editor.Challenge.Blocks[j];
+                if (b is null) continue;
+                vec3 q;
+                try { q = Editor::GetBlockLocation(b); }
+                catch { continue; }
+                if (Math::Abs(q.x - p.x) < 16.0 && Math::Abs(q.z - p.z) < 16.0 && Math::Abs(q.y - p.y) < 8.0) {
+                    Json::Value o = Json::Object();
+                    o["placedIndex"] = int(i);
+                    o["placedPos"] = Vec3ToJson(p);
+                    o["existingIndex"] = int(j);
+                    o["existingPos"] = Vec3ToJson(q);
+                    o["existingName"] = b.BlockInfo is null ? "" : string(b.BlockInfo.IdName);
+                    overlaps.Add(o);
+                    overlapCount++;
+                    break;
+                }
+            }
+            if (overlapCount >= 20) break; // cap warnings
+        }
+        output["overlapWarnings"] = overlaps;
+        output["overlapCount"] = overlapCount;
+        if (overlapCount > 0) {
+            output["overlapNote"] = "Placed blocks are within 16m XZ / 8m Y of pre-existing blocks (see overlapWarnings) — possible stacking/interpenetration; remove via RemoveByTag or RemoveBlocksByIndex if unintended.";
+        }
     }
 
     // Min internalPos over all blocks+items — the spec's lowest content point.
