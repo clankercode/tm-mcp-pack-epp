@@ -223,6 +223,13 @@ namespace TmMcpPackEpp {
         if (app is null) return MakeError("app not available", "UNKNOWN", true);
         uint mbBefore = editor.PluginMapType.MacroblockModels.Length;
 
+        // The save-macroblock toolbar button lives in the copy-paste tool
+        // frame and only responds in CopyPaste placement mode (E++'s
+        // stop-transfer enters it; explicit for recorder/copyPaste sources
+        // saved later in time). Idempotent if already in that mode.
+        Editor::SetPlacementMode(editor, CGameEditorPluginMap::EPlaceMode::CopyPaste);
+        for (uint i = 0; i < 5; i++) yield();
+
         CControlButton@ saveMbBtn = cast<CControlButton>(FollowCtrlPath(editor.EditorInterface.InterfaceRoot,
             {"FrameMain", "FrameCopyPasteTools", "FrameMacroblock", "ButtonSelectionBoxSaveNew"}));
         if (saveMbBtn is null) return MakeError("save-macroblock toolbar button not found (copy-paste mode?)", "UNKNOWN", true);
