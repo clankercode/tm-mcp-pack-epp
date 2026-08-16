@@ -55,51 +55,35 @@ namespace TmMcpPackEpp {
     void RecordTaggedPlacementsFromPlaceItem(Json::Value &in input, Json::Value@ placeOutput, const string &in itemPath) {
         string tag = ResolvePlacementTag(input);
         if (tag.Length == 0) return;
-        if (placeOutput is null || !placeOutput.HasKey("placements")) return;
-        auto placements = placeOutput["placements"];
-        if (placements.GetType() != Json::Type::Array) return;
-        auto editor = GetEditor();
-        int afterItems = placeOutput.HasKey("afterItems") ? int(placeOutput["afterItems"]) : -1;
-        int beforeItems = placeOutput.HasKey("beforeItems") ? int(placeOutput["beforeItems"]) : -1;
-        for (uint i = 0; i < placements.Length; i++) {
-            auto p = placements[i];
-            if (!bool(p["placed"])) continue;
-            vec3 pos = vec3(0, 0, 0);
-            if (p.HasKey("pos") && p["pos"].GetType() == Json::Type::Array && p["pos"].Length >= 3) {
-                pos = vec3(float(p["pos"][0]), float(p["pos"][1]), float(p["pos"][2]));
-            }
-            int idx = -1;
-            if (beforeItems >= 0 && afterItems > beforeItems) {
-                // Best-effort: sequential place indices
-                idx = beforeItems + int(i);
-                if (idx >= afterItems) idx = afterItems - 1;
-            }
-            RecordTaggedPlacement(tag, "item", itemPath, pos, idx);
-        }
+        if (placeOutput is null) return;
+        if (!placeOutput.HasKey("beforeItems") || !placeOutput.HasKey("afterItems") || !placeOutput.HasKey("pos")) return;
+        if (!bool(placeOutput["placed"])) return;
+        int before = int(placeOutput["beforeItems"]);
+        int after = int(placeOutput["afterItems"]);
+        if (after <= before) return;
+        vec3 pos = vec3(
+            float(placeOutput["pos"]["x"]),
+            float(placeOutput["pos"]["y"]),
+            float(placeOutput["pos"]["z"])
+        );
+        RecordTaggedPlacement(tag, "item", itemPath, pos, before);
     }
 
     void RecordTaggedPlacementsFromPlaceBlock(Json::Value &in input, Json::Value@ placeOutput, const string &in blockName) {
         string tag = ResolvePlacementTag(input);
         if (tag.Length == 0) return;
-        if (placeOutput is null || !placeOutput.HasKey("placements")) return;
-        auto placements = placeOutput["placements"];
-        if (placements.GetType() != Json::Type::Array) return;
-        int afterBlocks = placeOutput.HasKey("afterBlocks") ? int(placeOutput["afterBlocks"]) : -1;
-        int beforeBlocks = placeOutput.HasKey("beforeBlocks") ? int(placeOutput["beforeBlocks"]) : -1;
-        for (uint i = 0; i < placements.Length; i++) {
-            auto p = placements[i];
-            if (!bool(p["placed"])) continue;
-            vec3 pos = vec3(0, 0, 0);
-            if (p.HasKey("pos") && p["pos"].GetType() == Json::Type::Array && p["pos"].Length >= 3) {
-                pos = vec3(float(p["pos"][0]), float(p["pos"][1]), float(p["pos"][2]));
-            }
-            int idx = -1;
-            if (beforeBlocks >= 0 && afterBlocks > beforeBlocks) {
-                idx = beforeBlocks + int(i);
-                if (idx >= afterBlocks) idx = afterBlocks - 1;
-            }
-            RecordTaggedPlacement(tag, "block", blockName, pos, idx);
-        }
+        if (placeOutput is null) return;
+        if (!placeOutput.HasKey("beforeBlocks") || !placeOutput.HasKey("afterBlocks") || !placeOutput.HasKey("pos")) return;
+        if (!bool(placeOutput["placed"])) return;
+        int before = int(placeOutput["beforeBlocks"]);
+        int after = int(placeOutput["afterBlocks"]);
+        if (after <= before) return;
+        vec3 pos = vec3(
+            float(placeOutput["pos"]["x"]),
+            float(placeOutput["pos"]["y"]),
+            float(placeOutput["pos"]["z"])
+        );
+        RecordTaggedPlacement(tag, "block", blockName, pos, before);
     }
 
     bool TagMatchesFilter(const string &in tag, const string &in filter, bool prefix) {

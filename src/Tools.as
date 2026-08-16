@@ -512,6 +512,7 @@ namespace TmMcpPackEpp {
         o["afterBlocks"] = int(editor.Challenge.Blocks.Length);
         o["pos"] = Vec3ToJson(pos);
         o["blockName"] = string(blockInfo.IdName);
+        RecordTaggedPlacementsFromPlaceBlock(input, o, string(blockInfo.IdName));
         return Ok(o);
     }
 
@@ -547,6 +548,7 @@ namespace TmMcpPackEpp {
         o["afterItems"] = int(editor.Challenge.AnchoredObjects.Length);
         o["pos"] = Vec3ToJson(pos);
         o["itemPath"] = string(input["itemPath"]);
+        RecordTaggedPlacementsFromPlaceItem(input, o, string(input["itemPath"]));
         return Ok(o);
     }
 
