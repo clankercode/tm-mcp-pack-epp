@@ -295,6 +295,7 @@ namespace TmMcpPackEpp {
             "GetRecordedMacroblockSpec",
             "SaveMacroblockFile",
             "DismissDialogs",
+            "MoveCursorToWorld",
             "ListMacroblockInstances",
             "SetAgentTag",
             "ListTagged",
