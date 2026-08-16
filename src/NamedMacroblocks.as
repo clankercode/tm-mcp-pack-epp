@@ -281,16 +281,19 @@ namespace TmMcpPackEpp {
         bool addUndo = input.HasKey("addUndo") ? bool(input["addUndo"]) : true;
         bool autofocus = input.HasKey("autofocus") ? bool(input["autofocus"]) : true;
         vec3 offset = OptionalOffsetInput(input);
-        // x/y/z = target world position (meters) for the spec origin (min coord 0,1,0 —
-        // E++ macroblock convention). Spec origin sits at world -MacroblockInternalOffset()
-        // = (0,-56,0), so the required translate is target + MacroblockInternalOffset().
+        // x/y/z = target world position (meters) for the spec's lowest block/item.
+        // Placement math (ground-truthed): world = internalPos + offset - MPO, where
+        // internalPos = authored pos + MPO (E++ spec convention, MPO = (0,56,0) on
+        // Stadium). So to land the spec's min-pos at the target:
+        //   offset = target - specMinPos + MPO
         if (input.HasKey("x") || input.HasKey("y") || input.HasKey("z")) {
+            vec3 specMin = SpecMinPos(mb);
             vec3 target = vec3(
-                input.HasKey("x") ? float(input["x"]) : 0.0,
-                input.HasKey("y") ? float(input["y"]) : -56.0,
-                input.HasKey("z") ? float(input["z"]) : 0.0
+                input.HasKey("x") ? float(input["x"]) : specMin.x,
+                input.HasKey("y") ? float(input["y"]) : specMin.y - MacroblockInternalOffset().y,
+                input.HasKey("z") ? float(input["z"]) : specMin.z
             );
-            offset = target + MacroblockInternalOffset();
+            offset = target - specMin + MacroblockInternalOffset();
         }
         vec3 rotation = RotationInput(input);
         vec3 pivot = PivotInput(input);
@@ -697,6 +700,22 @@ namespace TmMcpPackEpp {
 
     vec3 MacroblockInternalOffset() {
         return vec3(0, 56, 0);
+    }
+
+    // Min internalPos over all blocks+items — the spec's lowest content point.
+    // internalPos = authored world pos + MPO (E++ convention), so the *world* pos
+    // of this point is specMin - MacroblockInternalOffset().
+    vec3 SpecMinPos(Editor::MacroblockSpec@ mb) {
+        vec3 mn = vec3(1e18, 1e18, 1e18);
+        for (uint i = 0; i < mb.blocks.Length; i++) {
+            vec3 p = mb.blocks[i].pos;
+            mn = vec3(Math::Min(mn.x, p.x), Math::Min(mn.y, p.y), Math::Min(mn.z, p.z));
+        }
+        for (uint i = 0; i < mb.items.Length; i++) {
+            vec3 p = mb.items[i].pos;
+            mn = vec3(Math::Min(mn.x, p.x), Math::Min(mn.y, p.y), Math::Min(mn.z, p.z));
+        }
+        return mn.x < 1e17 ? mn : vec3(0, -56, 0);
     }
 
     CGameCtnBlockInfo@ ResolveBlockModel(CGameEditorPluginMap@ pluginMap, const string &in blockName, bool &out isTerrain) {
