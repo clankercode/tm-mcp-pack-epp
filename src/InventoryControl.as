@@ -93,7 +93,7 @@ namespace TmMcpPackEpp {
                 @article = FindArticleRecursive(root, path, 14);
             }
             if (article is null) {
-                return MakeError("article not found (provide path or query)", "NOT_FOUND", false, "", "BrowseInventoryTree / FindInventory first");
+                return MakeError("article not found (provide path or query)", "NOT_FOUND", false, "", "ControlInventory action=status first (browse via query), or FindInventory / GetInventorySummary");
             }
 
             try {
