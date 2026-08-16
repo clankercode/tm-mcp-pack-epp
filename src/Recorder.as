@@ -405,8 +405,28 @@ namespace TmMcpPackEpp {
         // stage 5: wait for the file on disk. The save-as dialog defaults to
         // Documents/Trackmania/Blocks/<Collection>/ (observed) — index the
         // Blocks tree for the filename; also check MacroBlocks/.
+        // NOTE: IO::IndexFolder returns ABSOLUTE paths — use them verbatim.
+        // On overwrite, existence proves nothing (the old file "exists"):
+        // byte-compare checksums before/after. Verified live: the engine
+        // REWRITES on overwrite-confirm when content differs, and SKIPS the
+        // write (same bytes, same mtime) when the copy-paste macroblock is
+        // unchanged since the last save under that name — both fine; only
+        // report failure when no file ever appears.
         string foundPath = "";
         string wantFile = name + ".Macroblock.Gbx";
+        uint64 sumBefore = 0;
+        int sizeBefore = -1;
+        bool existedBefore = false;
+        {
+            string[] pre = IO::IndexFolder("C:/users/steamuser/Documents/Trackmania/Blocks/", true);
+            for (uint c = 0; c < pre.Length; c++) {
+                if (!pre[c].EndsWith(wantFile)) continue;
+                existedBefore = true;
+                sumBefore = ChecksumFile(pre[c]);
+                break;
+            }
+        }
+        bool bytesChanged = false;
         for (uint i = 0; i < 300 && foundPath.Length == 0; i++) {
             yield();
             if (IO::FileExists("C:/users/steamuser/Documents/Trackmania/MacroBlocks/" + wantFile)) {
@@ -415,7 +435,12 @@ namespace TmMcpPackEpp {
             }
             string[] results = IO::IndexFolder("C:/users/steamuser/Documents/Trackmania/Blocks/", true);
             for (uint c = 0; c < results.Length; c++) {
-                if (results[c].EndsWith(wantFile)) { foundPath = "C:/users/steamuser/Documents/Trackmania/Blocks/" + results[c]; break; }
+                if (!results[c].EndsWith(wantFile)) continue;
+                foundPath = results[c]; // absolute already
+                if (existedBefore) {
+                    bytesChanged = ChecksumFile(foundPath) != sumBefore;
+                }
+                break;
             }
         }
 
@@ -429,14 +454,43 @@ namespace TmMcpPackEpp {
         output["source"] = sourceNote;
         output["inventoryCountBefore"] = int(mbBefore);
         output["inventoryCountAfter"] = int(mbAfter);
+        if (sawOverwrite) {
+            output["overwritten"] = bytesChanged;
+            if (!bytesChanged && existedBefore) {
+                output["note"] = "overwrite confirmed; file bytes unchanged — the engine skipped rewriting identical content (the copy-paste macroblock has not changed since the last save under this name). The file on disk already matches; nothing to do.";
+            }
+        }
         if (foundPath.Length == 0) {
             output["error"] = "dialog flow completed but no file appeared on disk";
             auto dlg = ActiveDialogJson();
             if (dlg !is null) output["blockingDialog"] = dlg;
         } else {
-            output["note"] = "Native .Macroblock.Gbx written; inventory refreshes in-engine (verify with InspectMacroblockModel).";
+            bool skipNote = existedBefore && !bytesChanged && sawOverwrite;
+            if (!skipNote) {
+                output["note"] = "Native .Macroblock.Gbx written; inventory refreshes in-engine (verify with InspectMacroblockModel).";
+            }
         }
         return MakeSuccess(output);
+    }
+
+    // FNV-1a-ish checksum of a file (whole file; MB files are small).
+    // Reads uint32 words (MemoryBuffer has no byte reader); file size is mixed
+    // into the seed so any size change also flips the checksum. 0 = unreadable.
+    uint64 ChecksumFile(const string &in path) {
+        uint64 sum = 1469598103934665603;
+        try {
+            IO::File f(path, IO::FileMode::Read);
+            uint n = f.Size();
+            sum ^= uint64(n) * 1099511628211;
+            MemoryBuffer@ buf = f.Read(n);
+            uint words = n / 4;
+            for (uint i = 0; i < words; i++) {
+                sum = (sum ^ uint64(buf.ReadUInt32())) * 1099511628211;
+            }
+        } catch {
+            return 0;
+        }
+        return sum;
     }
 #endif
 }
