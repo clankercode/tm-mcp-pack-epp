@@ -291,6 +291,8 @@ namespace TmMcpPackEpp {
             "RemoveBlocksByIndex",
             "RemoveItemsByIndex",
             "InspectMacroblockModel",
+            "ControlMacroblockRecorder",
+            "GetRecordedMacroblockSpec",
             "ListMacroblockInstances",
             "SetAgentTag",
             "ListTagged",

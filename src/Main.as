@@ -61,6 +61,8 @@ namespace TmMcpPackEpp {
         if (name == "RemoveBlocksByIndex") return RemoveBlocksByIndex(input);
         if (name == "RemoveItemsByIndex") return RemoveItemsByIndex(input);
         if (name == "InspectMacroblockModel") return InspectMacroblockModel(input);
+        if (name == "ControlMacroblockRecorder") return ControlMacroblockRecorder(input);
+        if (name == "GetRecordedMacroblockSpec") return GetRecordedMacroblockSpec(input);
         if (name == "ListMacroblockInstances") return ListMacroblockInstances(input);
         if (name == "SetAgentTag") return SetAgentTag(input);
         if (name == "ListTagged") return ListTagged(input);
@@ -137,6 +139,8 @@ namespace TmMcpPackEpp {
         Add(b, "RemoveBlocksByIndex", "Delete map blocks by index (max 50).", '{"type":"object","properties":{"index":{"type":"integer"},"indices":{"type":"array"},"addUndo":{"type":"boolean"}},"additionalProperties":false}');
         Add(b, "RemoveItemsByIndex", "Delete anchored items by index (max 50).", '{"type":"object","properties":{"index":{"type":"integer"},"indices":{"type":"array"},"addUndo":{"type":"boolean"}},"additionalProperties":false}');
         Add(b, "InspectMacroblockModel", "Inspect a macroblock model by name, path, or index (counts + metadata).", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"limit":{"type":"integer"},"includeItems":{"type":"boolean"}},"additionalProperties":false}');
+        Add(b, "ControlMacroblockRecorder", "Control the E++ macroblock recorder: start recording, stop (finish or cancel), resume, or get status. While recording, every block/item placed (or deleted) in the editor is captured. Stop with cancel=false completes it (async transfer to copy-paste MB; poll status).", '{"type":"object","properties":{"action":{"type":"string","enum":["start","stop","resume","status"]},"cancel":{"type":"boolean"}},"additionalProperties":false}');
+        Add(b, "GetRecordedMacroblockSpec", "Snapshot the active (or completed, via resume) macroblock recording as counts, optionally storing it in the named store (asName) for PlaceNamedMacroblock. Spec pos are world-authored.", '{"type":"object","properties":{"asName":{"type":"string"},"replace":{"type":"boolean"}},"additionalProperties":false}');
         Add(b, "ListMacroblockInstances", "List macroblock model instances in the map.", '{"type":"object","properties":{"limit":{"type":"integer"}},"additionalProperties":false}');
         Add(b, "SetAgentTag", "Set the tag used for subsequent placements.", '{"type":"object","properties":{"tag":{"type":"string"}},"required":["tag"],"additionalProperties":false}');
         Add(b, "ListTagged", "List tagged placements.", '{"type":"object","properties":{"tag":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":false}');

@@ -312,14 +312,8 @@ namespace TmMcpPackEpp {
         // `pos` (all blocks at origin), so freeblock placement would stack them. Derive
         // world pos from coord using the spec convention (origin block at (0,-56,0),
         // 32m per X/Z block unit, 8m per Y unit — matches the Add* path: y=7 -> 56m).
-        for (uint i = 0; i < spec.blocks.Length; i++) {
-            auto b = spec.blocks[i];
-            nat3 c = b.coord;
-            b.pos = vec3(float(c.x) * 32.0, float(c.y) * 8.0 - 56.0, float(c.z) * 32.0);
-            if (!b.EnsureValidVariant()) {
-                return MakeError("block " + tostring(i) + " (" + b.BlockInfo.Name + ") has no valid free variant", "INVALID_INPUT");
-            }
-        }
+        string normalizeErr = NormalizeSpecForNamedStore(spec);
+        if (normalizeErr.Length > 0) return MakeError(normalizeErr, "INVALID_INPUT");
 
         if (existing >= 0) {
             @g_NamedMacroblocks[existing] = spec;
@@ -336,6 +330,52 @@ namespace TmMcpPackEpp {
         output["model"] = MacroblockModelToJson(model);
         output["note"] = "Imported as E++ MacroblockSpec; block skins are not carried over (see PreflightNamedMacroblockPlacement for placement caveats).";
         return MakeSuccess(output);
+    }
+
+    // Freeblock normalization for specs whose pos is already world-authored
+    // (recorder snapshots, Add* path). Returns "" on success.
+    string SetAllFreeForNamedStore(Editor::MacroblockSpec@ spec) {
+        spec.SetAllBlocksFree();
+        for (uint i = 0; i < spec.blocks.Length; i++) {
+            if (!spec.blocks[i].EnsureValidVariant()) {
+                return "block " + tostring(i) + " (" + spec.blocks[i].BlockInfo.Name + ") has no valid free variant";
+            }
+        }
+        return "";
+    }
+
+    // Freeblock normalization + coord->pos derivation for imported native models
+    // whose wire-format pos is meaningless (all at origin). Returns "" on success.
+    string NormalizeSpecForNamedStore(Editor::MacroblockSpec@ spec) {
+        spec.SetAllBlocksFree();
+        for (uint i = 0; i < spec.blocks.Length; i++) {
+            auto b = spec.blocks[i];
+            nat3 c = b.coord;
+            b.pos = vec3(float(c.x) * 32.0, float(c.y) * 8.0 - 56.0, float(c.z) * 32.0);
+            if (!b.EnsureValidVariant()) {
+                return "block " + tostring(i) + " (" + b.BlockInfo.Name + ") has no valid free variant";
+            }
+        }
+        return "";
+    }
+
+    // Store a spec (e.g. a recorder snapshot) under a name; null on failure.
+    Editor::MacroblockSpec@ StoreSpecAsNamed(Editor::MacroblockSpec@ spec, const string &in asName, bool replace) {
+        if (spec is null) return null;
+        if (spec.blocks.Length == 0 && spec.items.Length == 0) return null;
+        string err = SetAllFreeForNamedStore(spec);
+        if (err.Length > 0) return null;
+        int existing = FindNamedMacroblockIndex(asName);
+        if (existing >= 0 && !replace) return null;
+        if (existing >= 0) {
+            @g_NamedMacroblocks[existing] = spec;
+            @g_NamedMacroblockSkins[existing] = NewNamedMacroblockSkinList();
+        } else {
+            g_NamedMacroblockNames.InsertLast(asName);
+            g_NamedMacroblocks.InsertLast(spec);
+            g_NamedMacroblockSkins.InsertLast(NewNamedMacroblockSkinList());
+        }
+        return spec;
     }
 
     Json::Value@ ListSavedNamedMacroblocks(Json::Value &in input) {
