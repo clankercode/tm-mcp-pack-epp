@@ -56,6 +56,7 @@ namespace TmMcpPackEpp {
         if (name == "PreflightNamedMacroblockPlacement") return PreflightNamedMacroblockPlacement(input);
         if (name == "SaveNamedMacroblock") return SaveNamedMacroblock(input);
         if (name == "LoadNamedMacroblock") return LoadNamedMacroblock(input);
+        if (name == "ImportMacroblockModelToNamed") return ImportMacroblockModelToNamed(input);
         if (name == "ListSavedNamedMacroblocks") return ListSavedNamedMacroblocks(input);
         if (name == "RemoveBlocksByIndex") return RemoveBlocksByIndex(input);
         if (name == "RemoveItemsByIndex") return RemoveItemsByIndex(input);
@@ -131,6 +132,7 @@ namespace TmMcpPackEpp {
         Add(b, "PreflightNamedMacroblockPlacement", "Dry-run placement checks for a named macroblock.", '{"type":"object","properties":{"name":{"type":"string"}},"required":["name"],"additionalProperties":false}');
         Add(b, "SaveNamedMacroblock", "Persist a named macroblock spec to plugin data.", '{"type":"object","properties":{"name":{"type":"string"},"fileName":{"type":"string"}},"required":["name"],"additionalProperties":false}');
         Add(b, "LoadNamedMacroblock", "Load a named macroblock spec from plugin data.", '{"type":"object","properties":{"name":{"type":"string"},"fileName":{"type":"string"},"replace":{"type":"boolean"}},"additionalProperties":false}');
+        Add(b, "ImportMacroblockModelToNamed", "Import a native macroblock model (by name/path/index) into the named store as an E++ spec.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"asName":{"type":"string"},"replace":{"type":"boolean"}},"required":["asName"],"additionalProperties":false}');
         Add(b, "ListSavedNamedMacroblocks", "List saved named macroblock files.", '{"type":"object","properties":{},"additionalProperties":false}');
         Add(b, "RemoveBlocksByIndex", "Delete map blocks by index (max 50).", '{"type":"object","properties":{"indexes":{"type":"array"},"count":{"type":"integer"}},"additionalProperties":false}');
         Add(b, "RemoveItemsByIndex", "Delete anchored items by index (max 50).", '{"type":"object","properties":{"indexes":{"type":"array"},"count":{"type":"integer"}},"additionalProperties":false}');

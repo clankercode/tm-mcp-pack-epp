@@ -273,6 +273,64 @@ namespace TmMcpPackEpp {
         return MakeSuccess(output);
     }
 
+    Json::Value@ ImportMacroblockModelToNamed(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.PluginMapType is null) {
+            return MakeError("editor not available", "NOT_IN_EDITOR", true, "Editor");
+        }
+        if (!input.HasKey("name") && !input.HasKey("path") && !input.HasKey("index")) {
+            return MakeError("missing model name, path, or index", "INVALID_INPUT", false, "", "See InspectMacroblockModel for resolution");
+        }
+        if (!input.HasKey("asName")) return MakeError("missing asName", "INVALID_INPUT");
+        string asName = string(input["asName"]);
+        if (asName.Length == 0) return MakeError("asName is empty", "INVALID_INPUT");
+        bool replace = input.HasKey("replace") ? bool(input["replace"]) : false;
+
+        string source;
+        auto model = ResolveMacroblockModel(editor.PluginMapType, input, source);
+        if (model is null) return MakeError("macroblock model not found via " + source, "NOT_FOUND");
+
+        int existing = FindNamedMacroblockIndex(asName);
+        if (existing >= 0 && !replace) {
+            return MakeError("named macroblock already exists: " + asName, "INVALID_INPUT", false, "", "Pass replace=true");
+        }
+
+        Editor::MacroblockSpec@ spec = null;
+        try {
+            @spec = Editor::MakeMacroblockSpec(model);
+        } catch {
+            return MakeError("MakeMacroblockSpec failed: " + getExceptionInfo(), "UNKNOWN", true);
+        }
+        if (spec is null) return MakeError("MakeMacroblockSpec returned null", "UNKNOWN", true);
+        if (spec.blocks.Length == 0 && spec.items.Length == 0) {
+            return MakeError("macroblock model has no blocks/items to import (empty spec)", "INVALID_INPUT");
+        }
+        // Named store places via E++ freeblock placement; ground blocks would be rejected by
+        // PlaceMacroblock. Normalize like the Add* tools / recorder ForceFree do.
+        spec.SetAllBlocksFree();
+        for (uint i = 0; i < spec.blocks.Length; i++) {
+            if (!spec.blocks[i].EnsureValidVariant()) {
+                return MakeError("block " + tostring(i) + " (" + spec.blocks[i].BlockInfo.Name + ") has no valid free variant", "INVALID_INPUT");
+            }
+        }
+
+        if (existing >= 0) {
+            @g_NamedMacroblocks[existing] = spec;
+            @g_NamedMacroblockSkins[existing] = NewNamedMacroblockSkinList();
+        } else {
+            g_NamedMacroblockNames.InsertLast(asName);
+            g_NamedMacroblocks.InsertLast(spec);
+            g_NamedMacroblockSkins.InsertLast(NewNamedMacroblockSkinList());
+        }
+
+        Json::Value output = NamedMacroblockSummary(asName, spec);
+        output["imported"] = true;
+        output["source"] = source;
+        output["model"] = MacroblockModelToJson(model);
+        output["note"] = "Imported as E++ MacroblockSpec; block skins are not carried over (see PreflightNamedMacroblockPlacement for placement caveats).";
+        return MakeSuccess(output);
+    }
+
     Json::Value@ ListSavedNamedMacroblocks(Json::Value &in input) {
         EnsureNamedMbDir();
         string dir = NamedMbDataDir();

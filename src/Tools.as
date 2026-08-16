@@ -286,6 +286,7 @@ namespace TmMcpPackEpp {
             "PreflightNamedMacroblockPlacement",
             "SaveNamedMacroblock",
             "LoadNamedMacroblock",
+            "ImportMacroblockModelToNamed",
             "ListSavedNamedMacroblocks",
             "RemoveBlocksByIndex",
             "RemoveItemsByIndex",
