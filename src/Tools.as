@@ -214,6 +214,23 @@ namespace TmMcpPackEpp {
         return Ok(o);
     }
 
+    Json::Value@ SetMacroblockCanPlacePatch(Json::Value &in input) {
+#if DEV
+        if (!input.HasKey("on")) return Err("missing on", "bad_request");
+        bool applied = false;
+        try {
+            applied = Editor::DevTest::SetMacroblockCanPlacePatch(bool(input["on"]));
+        } catch {
+            return Err("SetMacroblockCanPlacePatch threw: " + getExceptionInfo(), "epp_exception");
+        }
+        auto o = Json::Object();
+        o["applied"] = applied;
+        return Ok(o);
+#else
+        return Err("SetMacroblockCanPlacePatch is DEV-only", "dev_only");
+#endif
+    }
+
     Json::Value@ ListCoverage(Json::Value &in input) {
         auto o = Json::Object();
         auto tools = Json::Array();

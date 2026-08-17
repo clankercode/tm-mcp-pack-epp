@@ -20,6 +20,8 @@ namespace TmMcpPackEpp {
         if (name == "PlaceMacroblockModelNative") return PlaceMacroblockModelNative(input);
         if (name == "PlaceMacroblockModelViaEppSpec") return PlaceMacroblockModelViaEppSpec(input);
         if (name == "SetMacroblockAutoTerrainLen") return SetMacroblockAutoTerrainLen(input);
+        if (name == "AliasMacroblockAutoTerrains") return AliasMacroblockAutoTerrains(input);
+        if (name == "DumpMacroblockAutoTerrainRaw") return DumpMacroblockAutoTerrainRaw(input);
         if (name == "SetMapEmbeddedColors") return SetMapEmbeddedColors(input);
         if (name == "ControlItemSkins") return ControlItemSkins(input);
         if (name == "ControlPlacementMode") return ControlPlacementMode(input);
@@ -84,6 +86,7 @@ namespace TmMcpPackEpp {
         if (name == "FindConnectingBlocks") return FindConnectingBlocks(input);
         if (name == "PlaceGridBlock") return PlaceGridBlock(input);
         if (name == "ListCoverage") return ListCoverage(input);
+        if (name == "SetMacroblockCanPlacePatch") return SetMacroblockCanPlacePatch(input);
         return Err("unknown pack tool: " + name, "unknown_tool");
     }
 
@@ -108,10 +111,12 @@ namespace TmMcpPackEpp {
         Add(b, "DeleteBlocksAndItems", "E++ batch delete by blockIndexes[]/itemIndexes[].", '{"type":"object","properties":{"blockIndexes":{"type":"array"},"itemIndexes":{"type":"array"},"addUndo":{"type":"boolean"}},"additionalProperties":false}');
         Add(b, "ConvertBlockToFree", "E++ ConvertBlockToFree by block index.", '{"type":"object","properties":{"index":{"type":"integer"}},"required":["index"],"additionalProperties":false}');
         Add(b, "GetMapAsMacroblock", "E++ GetMapAsMacroblock block/item/skin counts.", '{"type":"object","properties":{},"additionalProperties":false}');
+        Add(b, "DumpMacroblockAutoTerrainRaw", "DEV: hex dump an AutoTerrain entry (0x30) + genealogy (0x78) + bufs from a model's mb+0x1F8. Params: name|path|index(model), index(entry).", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"}},"additionalProperties":false}');
+        Add(b, "AliasMacroblockAutoTerrains", "DEV probe: alias donor model's mb+0x1F8 AutoTerrains buffer onto source model's real entries (ptr/len/cap copied). Params: donor, source (file paths). Restore manually.", '{"type":"object","properties":{"donor":{"type":"string"},"source":{"type":"string"}},"required":["donor","source"],"additionalProperties":false}');
         Add(b, "SetMacroblockAutoTerrainLen", "DEV probe: set AutoTerrains length on generated ground variant (which=variant, +0x258) or macroblock buf (which=mb, +0x200). Params: name|path|index, which, value. Restore manually after probing.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"which":{"type":"string"},"value":{"type":"integer"}},"required":["value"],"additionalProperties":false}');
         Add(b, "PlaceMacroblockModelNative", "Native (non-E++-donor) macroblock placement ground truth: resolves model by name/path/index and calls pmt.PlaceMacroblock / PlaceMacroblock_NoTerrain / PlaceMacroblock_AirMode. Params: name|path|index, x,y,z (block coord), mode=ground|noTerrain|air, force.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"x":{"type":"integer"},"y":{"type":"integer"},"z":{"type":"integer"},"mode":{"type":"string"},"force":{"type":"boolean"}},"additionalProperties":false}');
         Add(b, "GetMapTerrainGrid", "Raw map terrain genealogy grid dump (CGameCtnChallenge+0x390, one CGameCtnZoneGenealogy per XZ cell). Optional x/z/w/h window (default 0/0/4/4).", '{"type":"object","properties":{"x":{"type":"integer"},"z":{"type":"integer"},"w":{"type":"integer"},"h":{"type":"integer"}},"additionalProperties":false}');
-        Add(b, "PlaceMacroblockModelViaEppSpec", "E++ donor-path placement test: builds an E++ MacroblockSpec from a native model (terrain captured from mb+0x1F8) and places via Editor::PlaceMacroblock (air blocks/items pass + ground terrain pass). Params: name|path|index.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"}},"additionalProperties":false}');
+        Add(b, "PlaceMacroblockModelViaEppSpec", "E++ donor-path placement test: builds an E++ MacroblockSpec from a native model (terrain captured from mb+0x1F8) and places via Editor::PlaceMacroblock (air blocks/items pass + ground terrain pass). Params: name|path|index; optional dx/dz shift terrain offsets (placement follows min terrain coord).", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"dx":{"type":"integer"},"dz":{"type":"integer"}},"additionalProperties":false}');
         Add(b, "SetMapEmbeddedColors", "E++ Get/Set_Map_EmbeddedCustomColorsEncoded. action=get|set.", '{"type":"object","properties":{"action":{"type":"string"},"raw":{"type":"string"}},"additionalProperties":false}');
         Add(b, "ControlItemSkins", "E++ Get/SetItemSkinsRaw for item index. action=get|set.", '{"type":"object","properties":{"action":{"type":"string"},"index":{"type":"integer"},"fgSkin":{"type":"string"},"bgSkin":{"type":"string"}},"required":["index"],"additionalProperties":false}');
         Add(b, "ControlPlacementMode", "E++ Get/SetItemPlacementModeInt (0 None, 1 Normal, 2 FreeGround, 3 Free).", '{"type":"object","properties":{"action":{"type":"string"},"mode":{"type":"integer"}},"additionalProperties":false}');
@@ -176,6 +181,7 @@ namespace TmMcpPackEpp {
         Add(b, "FindConnectingBlocks", "What blocks can connect to a given block model: synthesizes a temp grid block in an empty corner, runs the engine connection query per candidate model, then deletes the temp block. Optional dir (default North), query filter, limit. Coords are relative to tempCoord (subtract for source-relative offsets).", '{"type":"object","properties":{"blockName":{"type":"string"},"dir":{"type":"string"},"query":{"type":"string"},"onlyPlaceable":{"type":"boolean"},"limit":{"type":"integer"}},"required":["blockName"],"additionalProperties":false}');
         Add(b, "PlaceGridBlock", "Place a normal grid-aligned (non-free) block via the engine: coord [x,y,z] block units (or x,y,z world meters), dir North/East/South/West, variant, onGround, noDestruction (default true = never overwrite), ghost. Pre-checks CanPlaceBlock and reports canPlace when refusing. This is the counterpart to free-block PlaceBlock.", '{"type":"object","properties":{"blockName":{"type":"string"},"coord":{"type":"array"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"dir":{"type":"string"},"variant":{"type":"integer"},"onGround":{"type":"boolean"},"noDestruction":{"type":"boolean"},"ghost":{"type":"boolean"},"autofocus":{"type":"boolean"},"tag":{"type":"string"}},"required":["blockName"],"additionalProperties":false}');
         Add(b, "ListCoverage", "List this pack's tools.", '{"type":"object","properties":{},"additionalProperties":false}');
+        Add(b, "SetMacroblockCanPlacePatch", "DEV: toggle E++'s MacroblockCanPlace mem-patch (on bool). Returns applied state. Use to A/B placement behavior with/without the forced canPlace check.", '{"type":"object","properties":{"on":{"type":"boolean"}},"required":["on"],"additionalProperties":false}');
         b.SetDispatch(Dispatch);
         auto r = TmMcp::RegisterToolPack(b);
         if (r !is null && r.HasKey("error") && string(r["error"]) == "pack 'tm-mcp-pack-epp' is already registered; UnregisterToolPack first") {

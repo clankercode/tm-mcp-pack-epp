@@ -17,8 +17,31 @@ namespace TmMcpPackEpp {
         if (input.HasKey("path")) {
             string path = string(input["path"]);
             auto model = pmt.GetMacroblockModelFromFilePath(path);
+            if (model !is null) {
+                source = "path";
+                return model;
+            }
+            // Fall back to preloading the fid: user files live under
+            // Documents/Trackmania (e.g. Macroblocks\\X\\y.Macroblock.Gbx),
+            // game files under GameData\\.
+            auto userFid = Fids::GetUser(path);
+            if (userFid !is null) {
+                @model = cast<CGameCtnMacroBlockInfo>(Fids::Preload(userFid));
+                if (model !is null) {
+                    source = "path(user-fid)";
+                    return model;
+                }
+            }
+            auto gameFid = Fids::GetGame("GameData\\" + path);
+            if (gameFid !is null) {
+                @model = cast<CGameCtnMacroBlockInfo>(Fids::Preload(gameFid));
+                if (model !is null) {
+                    source = "path(game-fid)";
+                    return model;
+                }
+            }
             source = "path";
-            return model;
+            return null;
         }
 
         if (input.HasKey("name")) {
@@ -353,12 +376,90 @@ namespace TmMcpPackEpp {
             output["nbBlocks"] = int(spec.blocks.Length);
             output["nbItems"] = int(spec.items.Length);
             output["nbTerrains"] = int(spec.Terrains.Length);
+            // optional: shift terrain offsets so the ground pass places elsewhere
+            if (input.HasKey("dx") || input.HasKey("dz")) {
+                int dx = input.HasKey("dx") ? int(input["dx"]) : 0;
+                int dz = input.HasKey("dz") ? int(input["dz"]) : 0;
+                for (uint i = 0; i < spec.Terrains.Length; i++) {
+                    spec.Terrains[i].offset += int3(dx, 0, dz);
+                }
+                output["shifted"] = int3(dx, 0, dz).ToString();
+            }
             placed = Editor::PlaceMacroblock(spec, false);
         } catch {
             err = getExceptionInfo();
         }
         output["placed"] = placed;
         if (err != "") output["error"] = err;
+        return MakeSuccess(output);
+    }
+
+    // DEV probe: alias a donor model's mb+0x1F8 AutoTerrains buffer onto a
+    // source model's real entries ({ptr,len,cap} copied). Used to bisect
+    // donor-flow vs fake-nod issues: ground-placing the aliased donor tests
+    // the donor path with real game nods. Restore manually (old values are
+    // returned).
+    Json::Value@ AliasMacroblockAutoTerrains(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.PluginMapType is null) return MakeError("editor not available");
+        string donorName = input.HasKey("donor") ? string(input["donor"]) : "";
+        string sourceName = input.HasKey("source") ? string(input["source"]) : "";
+        if (donorName == "" || sourceName == "") return MakeError("need donor and source");
+        auto pmt = editor.PluginMapType;
+        auto donor = pmt.GetMacroblockModelFromFilePath(donorName);
+        auto source = pmt.GetMacroblockModelFromFilePath(sourceName);
+        if (donor is null) return MakeError("donor not found: " + donorName);
+        if (source is null) return MakeError("source not found: " + sourceName);
+        Json::Value output = Json::Object();
+        uint64 oldPtr = Dev::GetOffsetUint64(donor, 0x1F8);
+        uint oldLen = Dev::GetOffsetUint32(donor, 0x200);
+        uint oldCap = Dev::GetOffsetUint32(donor, 0x204);
+        output["oldPtr"] = Text::FormatPointer(oldPtr);
+        output["oldLen"] = int(oldLen);
+        output["oldCap"] = int(oldCap);
+        uint64 srcPtr = Dev::GetOffsetUint64(source, 0x1F8);
+        uint srcLen = Dev::GetOffsetUint32(source, 0x200);
+        uint srcCap = Dev::GetOffsetUint32(source, 0x204);
+        output["srcPtr"] = Text::FormatPointer(srcPtr);
+        output["srcLen"] = int(srcLen);
+        output["srcCap"] = int(srcCap);
+        Dev::SetOffset(donor, 0x1F8, srcPtr);
+        Dev::SetOffset(donor, 0x200, srcLen);
+        Dev::SetOffset(donor, 0x204, srcCap);
+        output["newLen"] = int(Dev::GetOffsetUint32(donor, 0x200));
+        return MakeSuccess(output);
+    }
+
+    // DEV: hex dump an AutoTerrain entry (0x30) + its genealogy (0x78) from a
+    // macroblock model's mb+0x1F8 buffer, for fake-vs-real nod comparison.
+    Json::Value@ DumpMacroblockAutoTerrainRaw(Json::Value &in input) {
+        auto editor = GetEditor();
+        if (editor is null || editor.PluginMapType is null) return MakeError("editor not available");
+        string source;
+        auto model = ResolveMacroblockModel(editor.PluginMapType, input, source);
+        if (model is null) return MakeError("macroblock model not found via " + source);
+        uint ix = input.HasKey("index") ? uint(input["index"]) : 0;
+        uint64 bufPtr = Dev::GetOffsetUint64(model, 0x1F8);
+        uint len = Dev::GetOffsetUint32(model, 0x200);
+        if (ix >= len || bufPtr == 0) return MakeError("index out of range (len=" + len + ")");
+        uint64 atPtr = Dev::ReadUInt64(bufPtr + ix * 8);
+        Json::Value output = Json::Object();
+        output["atPtr"] = Text::FormatPointer(atPtr);
+        output["atBytes"] = Dev::Read(atPtr, 0x30);
+        uint64 genPtr = Dev::ReadUInt64(atPtr + 0x28);
+        output["genPtr"] = Text::FormatPointer(genPtr);
+        if (genPtr != 0) {
+            output["genBytes"] = Dev::Read(genPtr, 0x78);
+            auto gen = ZoneGenealogyRawToJson(genPtr);
+            output["genDecoded"] = gen;
+            uint64 zonesBuf = Dev::ReadUInt64(genPtr + 0x20);
+            uint zonesLen = Dev::ReadUInt32(genPtr + 0x28);
+            output["zonesBufBytes"] = Dev::Read(zonesBuf, Math::Min(zonesLen, 8) * 8);
+            uint64 heightsBuf = Dev::ReadUInt64(genPtr + 0x30);
+            output["heightsBufBytes"] = Dev::Read(heightsBuf, Math::Min(zonesLen, 8) * 4);
+            uint64 idsBuf = Dev::ReadUInt64(genPtr + 0x48);
+            output["idsBufBytes"] = Dev::Read(idsBuf, Math::Min(zonesLen, 8) * 4);
+        }
         return MakeSuccess(output);
     }
 

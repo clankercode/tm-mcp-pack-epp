@@ -7,4 +7,5 @@ namespace Editor {
     // SetAllCursorPos + PosToCoord are imported by Editor/Exports_General.as,
     // which the dependency compile includes since E++ 5fd2ed2 — re-declaring
     // them here collides ("same name and parameters already exists").
+    // Epp Lines is a separate plugin (EppLines) with its own MCP pack.
 }
