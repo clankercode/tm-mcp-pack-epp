@@ -16,6 +16,10 @@ namespace TmMcpPackEpp {
         if (name == "DeleteBlocksAndItems") return DeleteBlocksAndItems(input);
         if (name == "ConvertBlockToFree") return ConvertBlockToFree(input);
         if (name == "GetMapAsMacroblock") return GetMapAsMacroblock(input);
+        if (name == "GetMapTerrainGrid") return GetMapTerrainGrid(input);
+        if (name == "PlaceMacroblockModelNative") return PlaceMacroblockModelNative(input);
+        if (name == "PlaceMacroblockModelViaEppSpec") return PlaceMacroblockModelViaEppSpec(input);
+        if (name == "SetMacroblockAutoTerrainLen") return SetMacroblockAutoTerrainLen(input);
         if (name == "SetMapEmbeddedColors") return SetMapEmbeddedColors(input);
         if (name == "ControlItemSkins") return ControlItemSkins(input);
         if (name == "ControlPlacementMode") return ControlPlacementMode(input);
@@ -104,6 +108,10 @@ namespace TmMcpPackEpp {
         Add(b, "DeleteBlocksAndItems", "E++ batch delete by blockIndexes[]/itemIndexes[].", '{"type":"object","properties":{"blockIndexes":{"type":"array"},"itemIndexes":{"type":"array"},"addUndo":{"type":"boolean"}},"additionalProperties":false}');
         Add(b, "ConvertBlockToFree", "E++ ConvertBlockToFree by block index.", '{"type":"object","properties":{"index":{"type":"integer"}},"required":["index"],"additionalProperties":false}');
         Add(b, "GetMapAsMacroblock", "E++ GetMapAsMacroblock block/item/skin counts.", '{"type":"object","properties":{},"additionalProperties":false}');
+        Add(b, "SetMacroblockAutoTerrainLen", "DEV probe: set AutoTerrains length on generated ground variant (which=variant, +0x258) or macroblock buf (which=mb, +0x200). Params: name|path|index, which, value. Restore manually after probing.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"which":{"type":"string"},"value":{"type":"integer"}},"required":["value"],"additionalProperties":false}');
+        Add(b, "PlaceMacroblockModelNative", "Native (non-E++-donor) macroblock placement ground truth: resolves model by name/path/index and calls pmt.PlaceMacroblock / PlaceMacroblock_NoTerrain / PlaceMacroblock_AirMode. Params: name|path|index, x,y,z (block coord), mode=ground|noTerrain|air, force.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"},"x":{"type":"integer"},"y":{"type":"integer"},"z":{"type":"integer"},"mode":{"type":"string"},"force":{"type":"boolean"}},"additionalProperties":false}');
+        Add(b, "GetMapTerrainGrid", "Raw map terrain genealogy grid dump (CGameCtnChallenge+0x390, one CGameCtnZoneGenealogy per XZ cell). Optional x/z/w/h window (default 0/0/4/4).", '{"type":"object","properties":{"x":{"type":"integer"},"z":{"type":"integer"},"w":{"type":"integer"},"h":{"type":"integer"}},"additionalProperties":false}');
+        Add(b, "PlaceMacroblockModelViaEppSpec", "E++ donor-path placement test: builds an E++ MacroblockSpec from a native model (terrain captured from mb+0x1F8) and places via Editor::PlaceMacroblock (air blocks/items pass + ground terrain pass). Params: name|path|index.", '{"type":"object","properties":{"name":{"type":"string"},"path":{"type":"string"},"index":{"type":"integer"}},"additionalProperties":false}');
         Add(b, "SetMapEmbeddedColors", "E++ Get/Set_Map_EmbeddedCustomColorsEncoded. action=get|set.", '{"type":"object","properties":{"action":{"type":"string"},"raw":{"type":"string"}},"additionalProperties":false}');
         Add(b, "ControlItemSkins", "E++ Get/SetItemSkinsRaw for item index. action=get|set.", '{"type":"object","properties":{"action":{"type":"string"},"index":{"type":"integer"},"fgSkin":{"type":"string"},"bgSkin":{"type":"string"}},"required":["index"],"additionalProperties":false}');
         Add(b, "ControlPlacementMode", "E++ Get/SetItemPlacementModeInt (0 None, 1 Normal, 2 FreeGround, 3 Free).", '{"type":"object","properties":{"action":{"type":"string"},"mode":{"type":"integer"}},"additionalProperties":false}');
