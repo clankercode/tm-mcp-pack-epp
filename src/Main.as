@@ -20,7 +20,6 @@ namespace TmMcpPackEpp {
         if (name == "ControlItemSkins") return ControlItemSkins(input);
         if (name == "ControlPlacementMode") return ControlPlacementMode(input);
         if (name == "ControlPivot") return ControlPivot(input);
-        if (name == "DuplicateItem") return DuplicateItem(input);
         if (name == "FindInventory") return FindInventory(input);
         if (name == "RefreshInventory") return RefreshInventory(input);
         if (name == "GetInventorySummary") return GetInventorySummary(input);
@@ -109,7 +108,6 @@ namespace TmMcpPackEpp {
         Add(b, "ControlItemSkins", "E++ Get/SetItemSkinsRaw for item index. action=get|set.", '{"type":"object","properties":{"action":{"type":"string"},"index":{"type":"integer"},"fgSkin":{"type":"string"},"bgSkin":{"type":"string"}},"required":["index"],"additionalProperties":false}');
         Add(b, "ControlPlacementMode", "E++ Get/SetItemPlacementModeInt (0 None, 1 Normal, 2 FreeGround, 3 Free).", '{"type":"object","properties":{"action":{"type":"string"},"mode":{"type":"integer"}},"additionalProperties":false}');
         Add(b, "ControlPivot", "E++ Get/SetCurrentPivot.", '{"type":"object","properties":{"action":{"type":"string"},"pivot":{"type":"integer"}},"additionalProperties":false}');
-        Add(b, "DuplicateItem", "E++ DuplicateAndAddItem by item index.", '{"type":"object","properties":{"index":{"type":"integer"},"updateItems":{"type":"boolean"}},"required":["index"],"additionalProperties":false}');
         Add(b, "FindInventory", "Search E++ item inventory cache.", '{"type":"object","properties":{"query":{"type":"string"},"limit":{"type":"integer"}},"additionalProperties":false}');
         Add(b, "RefreshInventory", "Refresh E++ inventory cache.", '{"type":"object","properties":{},"additionalProperties":false}');
         Add(b, "GetInventorySummary", "E++ inventory item count + scan flag.", '{"type":"object","properties":{},"additionalProperties":false}');

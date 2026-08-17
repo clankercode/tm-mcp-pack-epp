@@ -214,25 +214,6 @@ namespace TmMcpPackEpp {
         return Ok(o);
     }
 
-    Json::Value@ DuplicateItem(Json::Value &in input) {
-        auto editor = GetEditor();
-        if (editor is null || editor.Challenge is null) return NeedEditor();
-        if (!input.HasKey("index")) return Err("missing index");
-        int idx = int(input["index"]);
-        if (idx < 0 || uint(idx) >= editor.Challenge.AnchoredObjects.Length) return Err("index out of range");
-        auto item = editor.Challenge.AnchoredObjects[uint(idx)];
-        bool update = input.HasKey("updateItems") ? bool(input["updateItems"]) : false;
-        CGameCtnAnchoredObject@ dup = null;
-        try { @dup = Editor::DuplicateAndAddItem(editor, item, update); } catch {
-            return Err("DuplicateAndAddItem threw: " + getExceptionInfo(), "epp_exception");
-        }
-        auto o = Json::Object();
-        o["duplicated"] = dup !is null;
-        o["afterItems"] = int(editor.Challenge.AnchoredObjects.Length);
-        if (dup !is null) o["pos"] = Vec3ToJson(dup.AbsolutePositionInMap);
-        return Ok(o);
-    }
-
     Json::Value@ ListCoverage(Json::Value &in input) {
         auto o = Json::Object();
         auto tools = Json::Array();
@@ -250,7 +231,6 @@ namespace TmMcpPackEpp {
             "ControlItemSkins",
             "ControlPlacementMode",
             "ControlPivot",
-            "DuplicateItem",
             "FindInventory",
             "RefreshInventory",
             "GetInventorySummary",
