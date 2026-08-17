@@ -77,6 +77,9 @@ namespace TmMcpPackEpp {
         if (name == "RemoveByTag") return RemoveByTag(input);
         if (name == "ClearTagIndex") return ClearTagIndex(input);
         if (name == "AssertPlacement") return AssertPlacement(input);
+        if (name == "GetBlockConnections") return GetBlockConnections(input);
+        if (name == "FindConnectingBlocks") return FindConnectingBlocks(input);
+        if (name == "PlaceGridBlock") return PlaceGridBlock(input);
         if (name == "ListCoverage") return ListCoverage(input);
         return Err("unknown pack tool: " + name, "unknown_tool");
     }
@@ -163,6 +166,9 @@ namespace TmMcpPackEpp {
         Add(b, "RemoveByTag", "Delete tagged placements.", '{"type":"object","properties":{"tag":{"type":"string"}},"required":["tag"],"additionalProperties":false}');
         Add(b, "ClearTagIndex", "Clear the tag index.", '{"type":"object","properties":{},"additionalProperties":false}');
         Add(b, "AssertPlacement", "Verify deltas / near{x,y,z} / tags after a place.", '{"type":"object","properties":{"expectBlocksDelta":{"type":"integer"},"expectItemsDelta":{"type":"integer"},"near":{"type":"object"},"tag":{"type":"string"},"tagMinCount":{"type":"integer"}},"additionalProperties":false}');
+        Add(b, "GetBlockConnections", "Engine connection options for an existing grid block: per candidate block model, the coords+dirs where it can attach (pmt.GetConnectResults). Pass index or coord; optional newBlockName/query to restrict candidates, fitsSpace to probe CanPlaceBlock per row, onlyPlaceable to hide canConnect=false rows. Road-family models report no clip connections.", '{"type":"object","properties":{"index":{"type":"integer"},"coord":{"type":"array"},"newBlockName":{"type":"string"},"query":{"type":"string"},"onlyPlaceable":{"type":"boolean"},"fitsSpace":{"type":"boolean"},"onGround":{"type":"boolean"},"limit":{"type":"integer"}},"additionalProperties":false}');
+        Add(b, "FindConnectingBlocks", "What blocks can connect to a given block model: synthesizes a temp grid block in an empty corner, runs the engine connection query per candidate model, then deletes the temp block. Optional dir (default North), query filter, limit. Coords are relative to tempCoord (subtract for source-relative offsets).", '{"type":"object","properties":{"blockName":{"type":"string"},"dir":{"type":"string"},"query":{"type":"string"},"onlyPlaceable":{"type":"boolean"},"limit":{"type":"integer"}},"required":["blockName"],"additionalProperties":false}');
+        Add(b, "PlaceGridBlock", "Place a normal grid-aligned (non-free) block via the engine: coord [x,y,z] block units (or x,y,z world meters), dir North/East/South/West, variant, onGround, noDestruction (default true = never overwrite), ghost. Pre-checks CanPlaceBlock and reports canPlace when refusing. This is the counterpart to free-block PlaceBlock.", '{"type":"object","properties":{"blockName":{"type":"string"},"coord":{"type":"array"},"x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},"dir":{"type":"string"},"variant":{"type":"integer"},"onGround":{"type":"boolean"},"noDestruction":{"type":"boolean"},"ghost":{"type":"boolean"},"autofocus":{"type":"boolean"},"tag":{"type":"string"}},"required":["blockName"],"additionalProperties":false}');
         Add(b, "ListCoverage", "List this pack's tools.", '{"type":"object","properties":{},"additionalProperties":false}');
         b.SetDispatch(Dispatch);
         auto r = TmMcp::RegisterToolPack(b);

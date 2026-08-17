@@ -307,6 +307,9 @@ namespace TmMcpPackEpp {
             "RemoveByTag",
             "ClearTagIndex",
             "AssertPlacement",
+            "GetBlockConnections",
+            "FindConnectingBlocks",
+            "PlaceGridBlock",
             "ListCoverage"
         };
         for (uint i = 0; i < names.Length; i++) tools.Add(names[i]);
